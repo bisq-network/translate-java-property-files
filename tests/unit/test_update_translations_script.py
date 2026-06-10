@@ -54,3 +54,13 @@ def test_config_file_is_normalized_before_late_quality_gate_call():
     quality_gate_index = script.index("src.translation_quality_gate")
 
     assert normalize_index < quality_gate_index
+
+
+def test_validation_summary_is_reset_before_translation_script_runs():
+    script = (REPO_ROOT / "update-translations.sh").read_text()
+
+    reset_index = script.index("translation_validation_summary.json")
+    python_index = script.index("python3 -u -m src.translate_localization_files")
+
+    assert reset_index < python_index
+    assert '{"files":{},"pipeline_warnings":[]}' in script

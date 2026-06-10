@@ -382,11 +382,15 @@ fi
 
 # Navigate back to the application's root directory to run the python script.
 # This ensures that the module path `src.translate_localization_files` is resolved correctly.
-if [ -d /app ]; then
-  cd /app
+APP_ROOT="/app"
+if [ ! -d "$APP_ROOT" ]; then
+  APP_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+fi
+if [ -d "$APP_ROOT" ]; then
+  cd "$APP_ROOT"
   log "Returned to the application root directory: $(pwd)"
 else
-  log "Warning: /app not found; staying in $(pwd) to run Python."
+  log "Warning: application root not found; staying in $(pwd) to run Python."
 fi
 
 # Step 3: Run the translation script
@@ -398,6 +402,9 @@ if [ -n "$TRANSLATION_FILTER_GLOB" ] && [ "$TRANSLATION_FILTER_GLOB" != "null" ]
 fi
 # Export filter glob if set (used by Python translation script)
 [ -n "$TRANSLATION_FILTER_GLOB" ] && [ "$TRANSLATION_FILTER_GLOB" != "null" ] && export TRANSLATION_FILTER_GLOB
+mkdir -p "$APP_ROOT/logs"
+VALIDATION_SUMMARY="$APP_ROOT/logs/translation_validation_summary.json"
+printf '%s\n' '{"files":{},"pipeline_warnings":[]}' > "$VALIDATION_SUMMARY"
 set +e
 python3 -u -m src.translate_localization_files
 PY_EXIT=$?
@@ -456,10 +463,7 @@ stage_and_submit_batch() {
     local branch="$1"
     local commit_msg="$2"
     local pr_title="$3"
-    local app_root="/app"
-    if [ ! -d "$app_root" ]; then
-        app_root=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-    fi
+    local app_root="${APP_ROOT:-/app}"
 
     git checkout -B "$branch" "${REMOTE}/${DEFAULT_BRANCH}"
 

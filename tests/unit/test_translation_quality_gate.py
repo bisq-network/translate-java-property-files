@@ -4,6 +4,7 @@ from src.translation_quality_gate import (
     QualityGateConfig,
     analyze_source_identical_changes,
     build_quality_gate_report,
+    load_validation_summary,
     render_quality_gate_markdown,
 )
 
@@ -125,6 +126,62 @@ def test_pipeline_warnings_are_blocking_when_configured():
     assert report["blocking"] is True
     assert report["pipeline_warnings_count"] == 1
     assert report["status_state"] == "failure"
+
+
+def test_pipeline_warnings_are_filtered_to_current_batch():
+    report = build_quality_gate_report(
+        source_stats=analyze_source_identical_changes(
+            diff_text="",
+            repo_root=".",
+            input_folder="resources",
+            locale_codes=["es"],
+            brand_glossary=[],
+        ),
+        validation_summary={
+            "files": {},
+            "pipeline_warnings": [
+                {"file": "mobile_es.properties", "errors": ["Current batch warning"]},
+                {"file": "mobile_de.properties", "errors": ["Other batch warning"]},
+            ],
+        },
+        changed_files=["resources/mobile_es.properties"],
+        input_folder="resources",
+        config=QualityGateConfig(block_on_pipeline_warnings=True),
+    )
+
+    assert report["blocking"] is True
+    assert report["pipeline_warnings_count"] == 1
+    assert report["pipeline_warnings"][0]["file"] == "mobile_es.properties"
+
+
+def test_pipeline_warnings_from_other_batches_do_not_block():
+    report = build_quality_gate_report(
+        source_stats=analyze_source_identical_changes(
+            diff_text="",
+            repo_root=".",
+            input_folder="resources",
+            locale_codes=["es"],
+            brand_glossary=[],
+        ),
+        validation_summary={
+            "files": {},
+            "pipeline_warnings": [
+                {"file": "mobile_de.properties", "errors": ["Other batch warning"]},
+            ],
+        },
+        changed_files=["resources/mobile_es.properties"],
+        input_folder="resources",
+        config=QualityGateConfig(block_on_pipeline_warnings=True),
+    )
+
+    assert report["blocking"] is False
+    assert report["pipeline_warnings_count"] == 0
+
+
+def test_missing_validation_summary_loads_empty_summary(tmp_path):
+    summary = load_validation_summary(str(tmp_path / "missing.json"))
+
+    assert summary == {"files": {}, "pipeline_warnings": []}
 
 
 def test_quality_gate_markdown_contains_validation_summary():

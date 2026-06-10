@@ -249,14 +249,25 @@ def _changed_files_relative_to_input(changed_files: Sequence[str], input_folder:
     result = set()
     for changed_file in changed_files:
         changed_path = Path(changed_file)
+        result.add(changed_path.as_posix())
+        result.add(changed_path.name)
         if changed_path.is_absolute():
             try:
-                result.add(str(changed_path.relative_to(input_path)))
+                result.add(changed_path.relative_to(input_path).as_posix())
             except ValueError:
                 result.add(changed_path.name)
         else:
-            result.add(changed_path.name)
+            input_folder_name = input_path.name
+            parts = changed_path.parts
+            for index, part in enumerate(parts):
+                if part == input_folder_name and index + 1 < len(parts):
+                    result.add(Path(*parts[index + 1 :]).as_posix())
     return result
+
+
+def _file_matches_changed_files(filename: str, changed_relative_files: set[str]) -> bool:
+    path = Path(filename)
+    return path.as_posix() in changed_relative_files or path.name in changed_relative_files
 
 
 def _aggregate_validation(
@@ -271,7 +282,7 @@ def _aggregate_validation(
         "placeholder_failures_count": 0,
     }
     for filename, file_summary in validation_summary.get("files", {}).items():
-        if changed_relative_files and filename not in changed_relative_files and Path(filename).name not in changed_relative_files:
+        if changed_relative_files and not _file_matches_changed_files(filename, changed_relative_files):
             continue
         totals["reverted_keys_count"] += int(file_summary.get("reverted_keys_count", 0))
         totals["control_character_findings_count"] += int(
@@ -279,6 +290,22 @@ def _aggregate_validation(
         )
         totals["placeholder_failures_count"] += int(file_summary.get("placeholder_failures_count", 0))
     return totals
+
+
+def _filter_pipeline_warnings(
+    validation_summary: Dict[str, Any],
+    changed_files: Sequence[str],
+    input_folder: str,
+) -> List[Dict[str, Any]]:
+    changed_relative_files = _changed_files_relative_to_input(changed_files, input_folder)
+    warnings = validation_summary.get("pipeline_warnings", [])
+    if not changed_relative_files:
+        return list(warnings)
+    return [
+        warning
+        for warning in warnings
+        if _file_matches_changed_files(str(warning.get("file", "")), changed_relative_files)
+    ]
 
 
 def build_quality_gate_report(
@@ -289,7 +316,7 @@ def build_quality_gate_report(
     config: QualityGateConfig,
 ) -> Dict[str, Any]:
     validation_totals = _aggregate_validation(validation_summary, changed_files, input_folder)
-    pipeline_warnings = validation_summary.get("pipeline_warnings", [])
+    pipeline_warnings = _filter_pipeline_warnings(validation_summary, changed_files, input_folder)
     blocking_reasons: List[str] = []
 
     source_identical_blocking = (
