@@ -20,6 +20,9 @@ class QualityGateConfig:
     source_identical_max_count: int = 20
     source_identical_max_ratio: float = 0.30
     block_on_pipeline_warnings: bool = True
+    block_on_semantic_qa_findings: bool = True
+    block_on_semantic_qa_warnings: bool = False
+    semantic_qa_audit_scope: str = "changed"
 
 
 @dataclass
@@ -256,6 +259,9 @@ def load_app_config() -> AppConfig:
         source_identical_max_count=int(quality_gate_config.get('source_identical_max_count', 20)),
         source_identical_max_ratio=float(quality_gate_config.get('source_identical_max_ratio', 0.30)),
         block_on_pipeline_warnings=bool(quality_gate_config.get('block_on_pipeline_warnings', True)),
+        block_on_semantic_qa_findings=bool(quality_gate_config.get('block_on_semantic_qa_findings', True)),
+        block_on_semantic_qa_warnings=bool(quality_gate_config.get('block_on_semantic_qa_warnings', False)),
+        semantic_qa_audit_scope=str(quality_gate_config.get('semantic_qa_audit_scope', 'changed')),
     )
 
     # Holistic review chunk size with environment override
