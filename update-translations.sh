@@ -584,9 +584,22 @@ This PR is from branch \`$branch\` on the \`${FORK_OWNER}/${FORK_REPO_NAME_SHORT
         log "Failed to publish translation-quality-gate commit status." "ERROR"
         return 1
     fi
-    local published_quality_state
-    if ! published_quality_state=$(gh api "repos/$status_repo/commits/$commit_sha/status" \
-        --jq '[(.statuses[] | select(.context == "translation-quality-gate"))][0].state // ""'); then
+    local published_quality_state=""
+    local verify_attempt
+    local verify_delay=2
+    for verify_attempt in 1 2 3 4 5; do
+        published_quality_state=$(gh api "repos/$status_repo/commits/$commit_sha/status" \
+            --jq '[(.statuses[] | select(.context == "translation-quality-gate"))][0].state // ""' \
+            2>/dev/null || true)
+        if [ "$published_quality_state" = "$quality_state" ]; then
+            break
+        fi
+        if [ "$verify_attempt" -lt 5 ]; then
+            sleep "$verify_delay"
+            verify_delay=$((verify_delay * 2))
+        fi
+    done
+    if [ -z "$published_quality_state" ]; then
         log "Failed to verify translation-quality-gate commit status." "ERROR"
         return 1
     fi

@@ -61,8 +61,8 @@ class TestLoadAppConfig:
                 "source_identical_max_count": 25,
                 "source_identical_max_ratio": 0.4,
                 "block_on_pipeline_warnings": False,
-                "block_on_semantic_qa_findings": False,
-                "block_on_semantic_qa_warnings": True,
+                "block_on_semantic_qa_findings": "false",
+                "block_on_semantic_qa_warnings": "yes",
                 "semantic_qa_audit_scope": "all",
             },
             "supported_locales": [

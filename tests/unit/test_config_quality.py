@@ -21,6 +21,7 @@ def test_recent_coderabbit_translation_nits_are_encoded_as_style_rules(config_pa
     style_rules = config["style_rules"]
     semantic_review = config.get("semantic_review", {})
     semantic_rules = config.get("semantic_quality_rules", [])
+    assert all("id" in rule for rule in semantic_rules)
     semantic_rules_by_id = {
         rule["id"]: rule
         for rule in semantic_rules

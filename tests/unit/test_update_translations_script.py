@@ -49,6 +49,10 @@ def test_generated_prs_publish_translation_quality_gate_status():
     assert 'status_repo="${FORK_OWNER}/${FORK_REPO_NAME_SHORT}"' in script
     assert 'gh api "repos/$status_repo/statuses/$commit_sha"' in script
     assert 'gh api "repos/$status_repo/commits/$commit_sha/status"' in script
+    assert "for verify_attempt in 1 2 3 4 5" in script
+    assert 'sleep "$verify_delay"' in script
+    assert 'verify_delay=$((verify_delay * 2))' in script
+    assert "2>/dev/null || true" in script
     assert "QUALITY_REPORT_MD" in script
 
 

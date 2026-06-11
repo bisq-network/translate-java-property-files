@@ -37,6 +37,7 @@ def test_semantic_reviewer_prompt_is_json_only_and_context_rich():
     assert "source_value" in combined
     assert "old_target_value" in combined
     assert "new_target_value" in combined
+    assert '"file": "relative/path/to/file.properties"' in combined
     assert "Clear network address: {0}" in combined
     assert "Borrar dirección de red: {0}" in combined
     assert "Do not translate clear as delete" in combined
@@ -48,12 +49,14 @@ def test_normalize_review_response_accepts_only_in_scope_findings():
         {
             "findings": [
                 {
+                    "file": "resources/mobile_es.properties",
                     "key": "mobile.clear",
                     "severity": "error",
                     "reason": "Delete verb used for clearnet label.",
                     "suggested_value": "Dirección de red pública: {0}",
                 },
                 {
+                    "file": "resources/mobile_es.properties",
                     "key": "outside.scope",
                     "severity": "error",
                     "reason": "Should be ignored.",
@@ -75,11 +78,51 @@ def test_normalize_review_response_accepts_only_in_scope_findings():
     findings = normalize_review_response(response, changes)
 
     assert len(findings) == 1
-    assert findings[0]["file"] == "mobile_es.properties"
+    assert findings[0]["file"] == "resources/mobile_es.properties"
     assert findings[0]["key"] == "mobile.clear"
     assert findings[0]["severity"] == "error"
     assert findings[0]["source"] == "ai-review"
     assert findings[0]["suggested_value"] == "Dirección de red pública: {0}"
+
+
+def test_normalize_review_response_matches_duplicate_keys_by_file_and_key():
+    response = json.dumps(
+        {
+            "findings": [
+                {
+                    "file": "resources/settings_es.properties",
+                    "key": "shared.clear",
+                    "severity": "warning",
+                    "reason": "Ambiguous clear wording.",
+                }
+            ]
+        }
+    )
+    changes = [
+        TranslationChange(
+            file="resources/mobile_es.properties",
+            locale_code="es",
+            key="shared.clear",
+            source_value="Clear",
+            old_value=None,
+            new_value="Borrar",
+        ),
+        TranslationChange(
+            file="resources/settings_es.properties",
+            locale_code="es",
+            key="shared.clear",
+            source_value="Clear",
+            old_value=None,
+            new_value="Limpiar",
+        ),
+    ]
+
+    findings = normalize_review_response(response, changes)
+
+    assert len(findings) == 1
+    assert findings[0]["file"] == "resources/settings_es.properties"
+    assert findings[0]["key"] == "shared.clear"
+    assert findings[0]["value"] == "Limpiar"
 
 
 def test_append_semantic_review_findings_preserves_existing_summary(tmp_path):

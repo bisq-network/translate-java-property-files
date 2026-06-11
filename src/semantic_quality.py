@@ -296,18 +296,18 @@ def evaluate_semantic_rules(
             if rule.source_regex and not _regex_matches(rule.source_regex, change.source_value):
                 continue
 
-            matched = False
+            violation = False
             if rule.forbidden_target_regex and _regex_matches(
                 rule.forbidden_target_regex,
                 change.new_value,
             ):
-                matched = True
+                violation = True
             if rule.required_target_regex and not _regex_matches(
                 rule.required_target_regex,
                 change.new_value,
             ):
-                matched = True
-            if not matched:
+                violation = True
+            if not violation:
                 continue
 
             findings.append(

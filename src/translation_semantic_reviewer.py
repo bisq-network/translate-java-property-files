@@ -28,8 +28,9 @@ SEMANTIC_REVIEW_SCHEMA = {
             "type": "array",
             "items": {
                 "type": "object",
-                "required": ["key", "severity", "reason"],
+                "required": ["file", "key", "severity", "reason"],
                 "properties": {
+                    "file": {"type": "string"},
                     "key": {"type": "string"},
                     "severity": {"type": "string", "enum": ["error", "warning"]},
                     "reason": {"type": "string"},
@@ -74,6 +75,7 @@ def build_semantic_review_messages(
         "response_schema": {
             "findings": [
                 {
+                    "file": "relative/path/to/file.properties",
                     "key": "changed.key.only",
                     "severity": "error|warning",
                     "reason": "Short reviewer rationale.",
@@ -95,16 +97,17 @@ def normalize_review_response(
 ) -> List[Dict[str, str]]:
     parsed = json.loads(response_text)
     jsonschema.validate(instance=parsed, schema=SEMANTIC_REVIEW_SCHEMA)
-    changes_by_key = {change.key: change for change in changes}
+    changes_by_identity = {(change.file, change.key): change for change in changes}
     findings: List[Dict[str, str]] = []
 
     for raw_finding in parsed.get("findings", []):
+        file = raw_finding["file"]
         key = raw_finding["key"]
-        change = changes_by_key.get(key)
+        change = changes_by_identity.get((file, key))
         if not change:
             continue
         finding = {
-            "file": Path(change.file).name,
+            "file": change.file,
             "key": key,
             "severity": raw_finding["severity"],
             "reason": raw_finding["reason"],
