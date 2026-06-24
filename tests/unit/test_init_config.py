@@ -87,6 +87,7 @@ class TestBuildConfig:
         assert cfg["input_folder"] == "i18n"
         assert cfg["supported_locales"] == [{"code": "de", "name": "German"}]
         assert "model_name" in cfg and "review_model_name" in cfg
+        assert cfg["localization_format"] == "java_properties"
 
     def test_optional_base_url_included_when_provided(self):
         cfg = build_config(

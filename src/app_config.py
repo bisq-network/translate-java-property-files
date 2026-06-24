@@ -11,6 +11,11 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 from src.logging_config import setup_logger
+from src.localization_formats import (
+    JAVA_PROPERTIES_FORMAT,
+    LocalizationFormat,
+    load_localization_format,
+)
 from src.semantic_quality import normalize_retained_source_word_allowlist
 
 
@@ -70,6 +75,10 @@ class AppConfig:
     # Optional OpenAI-compatible endpoint (e.g. a local Ollama server or another
     # provider). None means the default OpenAI API. See _resolve_api_base_url.
     api_base_url: Optional[str] = None
+
+    # Project/format profile
+    project_context: str = ""
+    localization_format: LocalizationFormat = JAVA_PROPERTIES_FORMAT
 
 
 @dataclass(frozen=True)
@@ -145,6 +154,11 @@ def validate_config(
             "warning",
             "No 'supported_locales' configured; nothing will be translated."
         ))
+
+    try:
+        load_localization_format(config.get("localization_format"))
+    except ValueError as exc:
+        issues.append(ConfigIssue("error", str(exc)))
 
     # style_rules referencing locales that are not declared is almost always a typo.
     style_rules = config.get("style_rules") or {}
@@ -470,6 +484,12 @@ def load_app_config() -> AppConfig:
     if not os.path.isabs(translation_key_ledger_file_path):
         translation_key_ledger_file_path = os.path.join(project_root, translation_key_ledger_file_path)
 
+    project_context = str(config.get('project_context') or '').strip()
+    try:
+        localization_format = load_localization_format(config.get('localization_format'))
+    except ValueError:
+        localization_format = JAVA_PROPERTIES_FORMAT
+
     # Create the client against the endpoint resolved earlier.
     openai_client = _create_openai_client(dry_run, logger, api_base_url)
 
@@ -490,7 +510,7 @@ def load_app_config() -> AppConfig:
         retranslate_identical_source_strings=retranslate_identical_source_strings,
         style_rules=style_rules,
         precomputed_style_rules_text=precomputed_style_rules_text,
-        brand_glossary=config.get('brand_technical_glossary', ['MuSig', 'Bisq', 'Lightning', 'I2P', 'Tor']),
+        brand_glossary=[str(term) for term in (config.get('brand_technical_glossary') or [])],
         translation_queue_folder=translation_queue_folder,
         translated_queue_folder=translated_queue_folder,
         translation_key_ledger_file_path=translation_key_ledger_file_path,
@@ -498,4 +518,6 @@ def load_app_config() -> AppConfig:
         openai_client=openai_client,
         quality_gate=quality_gate,
         api_base_url=api_base_url,
+        project_context=project_context,
+        localization_format=localization_format,
     )

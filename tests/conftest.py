@@ -42,6 +42,9 @@ def setup_global_test_environment(integration_test_paths):
     # Mock language configuration to avoid dependency on config.yaml in tests
     mock_language_codes = {"de": "German", "es": "Spanish", "fr": "French"}
     mock_name_to_code = {"german": "de", "spanish": "es", "french": "fr"}
+    original_api_key = os.environ.get("OPENAI_API_KEY")
+    if original_api_key is None:
+        os.environ["OPENAI_API_KEY"] = "sk-test-key"
 
     patches = [
         patch('src.translate_localization_files.INPUT_FOLDER', paths['input_folder']),
@@ -70,6 +73,10 @@ def setup_global_test_environment(integration_test_paths):
                 p.stop()
             except Exception as e:
                 logging.error(f"Failed to stop patch: {e}")
+        if original_api_key is None:
+            os.environ.pop("OPENAI_API_KEY", None)
+        else:
+            os.environ["OPENAI_API_KEY"] = original_api_key
 
     # Clean up directories once after all tests are done
     for folder in [paths['input_folder'], paths['translation_queue_folder'], paths['translated_queue_folder']]:

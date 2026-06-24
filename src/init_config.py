@@ -78,6 +78,7 @@ def build_config(
     config: Dict[str, object] = {
         "target_project_root": target_project_root,
         "input_folder": input_folder,
+        "localization_format": "java_properties",
         "translation_source": "git",
         "model_name": model_name,
         "review_model_name": review_model_name,

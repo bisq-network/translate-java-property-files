@@ -39,10 +39,11 @@ from openai.types.chat import (
 from tqdm.asyncio import tqdm
 
 from src.app_config import load_app_config
+from src.localization_formats import JAVA_PROPERTIES_FORMAT, LocalizationFormat
 from src.properties_parser import parse_properties_file, reassemble_file
 from src.usage_tracker import usage_tracker
 from src.cost_estimator import estimate_run_cost, format_estimate
-from src.locale_utils import is_locale_file
+from src.translation_prompts import build_translation_system_prompt
 from src.translation_validator import (
     check_placeholder_parity,
     check_encoding_and_mojibake,
@@ -85,6 +86,8 @@ RETRANSLATE_IDENTICAL_SOURCE_STRINGS = config.retranslate_identical_source_strin
 STYLE_RULES = config.style_rules
 PRECOMPUTED_STYLE_RULES_TEXT = config.precomputed_style_rules_text
 BRAND_GLOSSARY = config.brand_glossary
+PROJECT_CONTEXT = config.project_context
+LOCALIZATION_FORMAT = config.localization_format
 TRANSLATION_QUEUE_FOLDER = config.translation_queue_folder
 TRANSLATED_QUEUE_FOLDER = config.translated_queue_folder
 TRANSLATION_KEY_LEDGER_FILE_PATH = config.translation_key_ledger_file_path
@@ -871,7 +874,12 @@ def run_post_translation_validation(
     temp_file_path = None
     try:
         # Create a temporary file with delete=False to control its lifecycle.
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.properties', encoding='utf-8') as temp_f:
+        with tempfile.NamedTemporaryFile(
+                mode='w',
+                delete=False,
+                suffix=LOCALIZATION_FORMAT.file_extension,
+                encoding='utf-8'
+        ) as temp_f:
             temp_file_path = temp_f.name
             temp_f.write(final_content)
             temp_f.flush()
@@ -1035,6 +1043,7 @@ def run_per_key_validation(
     )
     return valid_translations, list(summary["failed_keys"])
 
+
 async def translate_text_async(
         text: str,
         key: str,
@@ -1098,31 +1107,12 @@ async def translate_text_async(
         # Extract and protect placeholders
         processed_text, placeholder_mapping = extract_placeholders(text)
 
-        system_prompt = f"""
-You are an expert translator specializing in software localization. Translate the following text from English to {target_language}, considering the context and glossary provided.
-
-**Instructions**:
-- **Do not translate or modify placeholder tokens**: Any text enclosed within double underscores `__` (e.g., `__PH_abc123__`) should remain exactly as is. These represent placeholders like {{0}}, {{1}}, or HTML tags.
-- **CRITICAL - Translate ALL other text**: You MUST translate all regular text, even if it appears between, before, or after placeholder tokens. Do not skip text just because it is near placeholders.
-- **Strictly follow all glossaries**:
-  - **Brand/Technical Glossary**: These terms MUST NOT be translated. Preserve their original casing and form.
-  - **Translation Glossary**: These terms are non-negotiable. You MUST use the provided translation, matching the source term case-insensitively.
-- **Preserve formatting**: Keep special characters and formatting such as `\\n` and `\\t`.
-- **Do not add** any additional characters or punctuation (e.g., no square brackets, quotation marks, etc.).
-- **Provide only** the translated text corresponding to the Value.
-- **Do not escape single quotes**: Treat single quotes (') as literal characters. The system will handle necessary escaping.
-
-Use the translations specified in the glossary for the given terms. Ensure the translation reads naturally and is culturally appropriate for the target audience.
-
-**Style and Tone Guidelines**:
-- **Professional and Reassuring**: The tone should be professional, clear, and reassuring. Avoid overly casual or informal language.
-- **No Mixed Languages**: Do not mix English terms with the target language in a single phrase (e.g., "Seed Words Confermati!"). The translation should be fully localized.
-- **Language-Specific Conventions**: Adhere to conventions of the target language.
-
-{style_rules_text}
-
-The translation is for a desktop trading app called Bisq. Keep the translations brief and consistent with typical software terminology. On Bisq, you can buy and sell bitcoin for fiat (or other cryptocurrencies) privately and securely using Bisq's peer-to-peer network and open-source desktop software. "Bisq Easy" is a brand name and should not be translated.
-"""
+        system_prompt = build_translation_system_prompt(
+            target_language=target_language,
+            style_rules_text=style_rules_text,
+            project_context=PROJECT_CONTEXT,
+            localization_format=LOCALIZATION_FORMAT,
+        )
 
         brand_glossary_text = '\n'.join(f"- {term}" for term in dict.fromkeys(BRAND_GLOSSARY))
         prompt = """
@@ -1203,13 +1193,14 @@ def _build_holistic_review_system_prompt(
         keys_to_review: List[str],
         source_content: str,
         translated_content: str,
-        style_rules_text: str  # Pass pre-computed rules
+        style_rules_text: str,  # Pass pre-computed rules
+        localization_format: LocalizationFormat = LOCALIZATION_FORMAT,
 ) -> str:
     """Builds the system prompt for the holistic review API call."""
     keys_to_review_text = "\n".join([f"- {k}" for k in keys_to_review])
 
     return f"""
-You are a lead editor and quality assurance specialist for software localization. Your task is to review a list of newly translated keys within a `.properties` file for {target_language}. You are given the full source and translated files for context, but you MUST only review and return the keys specified.
+You are a lead editor and quality assurance specialist for software localization. Your task is to review a list of newly translated keys within a {localization_format.display_name} file for {target_language}. You are given the full source and translated files for context, but you MUST only review and return the keys specified.
 
 **Critical Instructions**:
 1.  **Strictly Limited Scope**: You MUST only review and provide corrected translations for the following keys. Do NOT output any other keys in your final JSON.
@@ -1241,12 +1232,12 @@ You are a lead editor and quality assurance specialist for software localization
 Return a JSON object containing the fully corrected translations for the following files.
 
 **Source (English) File**:
-```properties
+```{localization_format.code_fence}
 {source_content}
 ```
 
 **Translated ({target_language}) File to Review**:
-```properties
+```{localization_format.code_fence}
 {translated_content}
 ```
 """
@@ -1297,7 +1288,8 @@ async def holistic_review_async(
             keys_to_review=keys_to_review,
             source_content=protected_source,
             translated_content=protected_translated,
-            style_rules_text=style_rules_text
+            style_rules_text=style_rules_text,
+            localization_format=LOCALIZATION_FORMAT,
         )
         max_retries = 3
         base_delay = 5  # Longer delay for a potentially larger task
@@ -1440,13 +1432,7 @@ def extract_language_from_filename(filename: str, supported_codes: List[str]) ->
     Returns:
         Optional[str]: The language code if found, else None.
     """
-    # Sort codes by length, longest first, to handle cases like 'pt_BR' before 'pt'
-    # if 'pt' were ever a supported code.
-    sorted_codes = sorted(supported_codes, key=len, reverse=True)
-    for code in sorted_codes:
-        if filename.endswith(f'_{code}.properties'):
-            return code
-    return None
+    return LOCALIZATION_FORMAT.extract_supported_locale_suffix(filename, supported_codes)
 
 def get_source_filename(translation_file: str, supported_codes: List[str]) -> str:
     """
@@ -1473,19 +1459,7 @@ def get_source_filename(translation_file: str, supported_codes: List[str]) -> st
         >>> get_source_filename('app.properties', ['es', 'de'])
         'app.properties'
     """
-    # Sort by length (longest first) to handle 'pt_PT' before 'pt'
-    # This ensures we match the most specific language code first
-    sorted_codes = sorted(supported_codes, key=len, reverse=True)
-
-    for code in sorted_codes:
-        suffix = f'_{code}.properties'
-        if translation_file.endswith(suffix):
-            # Remove the language suffix and return base name + .properties
-            return translation_file[:-len(suffix)] + '.properties'
-
-    # Fallback: No language code found, return unchanged
-    # This handles source files like 'app.properties' or unsupported language codes
-    return translation_file
+    return LOCALIZATION_FORMAT.source_filename(translation_file, supported_codes)
 
 def move_files_to_archive(input_folder_path: str, archive_folder_path: str):
     """
@@ -1498,7 +1472,7 @@ def move_files_to_archive(input_folder_path: str, archive_folder_path: str):
     os.makedirs(archive_folder_path, exist_ok=True)
     for root, _, files in os.walk(input_folder_path):
         for filename in files:
-            if filename.endswith('.properties') and re.search(r'_[a-z]{2,3}(?:[-_][A-Za-z]{2,4})?\.properties$', filename):
+            if LOCALIZATION_FORMAT.is_supported_file(filename) and LOCALIZATION_FORMAT.is_locale_file(filename):
                 # Construct relative path to maintain directory structure
                 relative_path = os.path.relpath(os.path.join(root, filename), input_folder_path)
                 source_path = os.path.join(input_folder_path, relative_path)
@@ -1526,7 +1500,7 @@ def copy_translated_files_back(
     """
     for root, _dirs, files in os.walk(translated_queue_folder):
         for name in files:
-            if name.endswith('.properties') and re.search(r'_[a-z]{2,3}(?:[-_][A-Za-z]{2,4})?\.properties$', name):
+            if LOCALIZATION_FORMAT.is_supported_file(name) and LOCALIZATION_FORMAT.is_locale_file(name):
                 rel_path = os.path.relpath(os.path.join(root, name), translated_queue_folder)
                 translated_file_path = os.path.join(translated_queue_folder, rel_path)
                 dest_path = os.path.join(input_folder_path, rel_path)
@@ -1616,9 +1590,9 @@ def get_changed_translation_files(
         discovered_files: List[str] = []
         for root, _, files in os.walk(input_folder_path):
             for filename in files:
-                if not filename.endswith('.properties'):
+                if not LOCALIZATION_FORMAT.is_supported_file(filename):
                     continue
-                if not is_locale_file(filename):
+                if not LOCALIZATION_FORMAT.is_locale_file(filename):
                     continue
                 absolute_path = os.path.join(root, filename)
                 relative_path = os.path.relpath(absolute_path, input_folder_path)
@@ -1686,7 +1660,7 @@ def get_changed_translation_files(
         for cleaned_status, filepath in entries:
             if cleaned_status not in accepted_status:
                 continue
-            if not filepath.endswith('.properties'):
+            if not LOCALIZATION_FORMAT.is_supported_file(filepath):
                 continue
             # Extract the filename relative to input_folder
             rel_path = os.path.relpath(filepath, rel_input_folder)
@@ -1694,7 +1668,7 @@ def get_changed_translation_files(
                 continue
             # Check if it's a translation file (has language suffix). Supports
             # hyphenated locale codes like zh-Hans, zh-Hant.
-            if is_locale_file(os.path.basename(filepath)):
+            if LOCALIZATION_FORMAT.is_locale_file(os.path.basename(filepath)):
                 changed_translation_files.add(rel_path)
             else:
                 changed_source_files.add(rel_path.replace('\\', '/'))
@@ -1775,10 +1749,17 @@ async def process_translation_queue(
         - A dictionary of skipped files, mapping filename to a list of error strings.
         - Total number of keys translated across all files.
     """
+    if LOCALIZATION_FORMAT.id != JAVA_PROPERTIES_FORMAT.id:
+        raise NotImplementedError(
+            "Only localization_format=java_properties is supported by the current parser pipeline. "
+            "Add format-specific parser, serializer, linter, and placeholder hooks before processing "
+            f"{LOCALIZATION_FORMAT.id} files."
+        )
+
     properties_files = []
     for root, _, files in os.walk(translation_queue_folder):
         for name in files:
-            if name.endswith('.properties'):
+            if LOCALIZATION_FORMAT.is_supported_file(name):
                 # Get the relative path from the queue folder to preserve subdirectories
                 relative_path = os.path.relpath(os.path.join(root, name), translation_queue_folder)
                 properties_files.append(relative_path)
@@ -1951,7 +1932,12 @@ async def process_translation_queue(
 
         # We need a dictionary of the draft translations to build targeted context for each chunk.
         # This is easier than parsing the string repeatedly.
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.properties', encoding='utf-8') as temp_f:
+        with tempfile.NamedTemporaryFile(
+                mode='w',
+                delete=False,
+                suffix=LOCALIZATION_FORMAT.file_extension,
+                encoding='utf-8'
+        ) as temp_f:
             temp_f.write(draft_content)
             temp_draft_path = temp_f.name
         _, draft_translations = parse_properties_file(temp_draft_path)
@@ -2139,9 +2125,12 @@ def generate_translation_summary(
         code = extract_language_from_filename(basename, sorted_codes)
         if code:
             locales.add(code)
-            suffix = f"_{code}.properties"
-            module = basename[:-len(suffix)]
-            if module:
+            source_basename = os.path.basename(LOCALIZATION_FORMAT.source_filename(basename, sorted_codes))
+            if source_basename.endswith(LOCALIZATION_FORMAT.file_extension):
+                module = source_basename[:-len(LOCALIZATION_FORMAT.file_extension)]
+            else:
+                module = os.path.splitext(source_basename)[0]
+            if module and module != basename:
                 modules.add(module)
 
     sorted_modules = sorted(modules)

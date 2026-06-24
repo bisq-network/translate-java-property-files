@@ -2,7 +2,7 @@
 #
 # This is a small, generic starting point. For a richer, real-world example with
 # per-locale style rules, learned semantic quality rules, and a large glossary,
-# see docker/config.docker.yaml (the Bisq production config).
+# see profiles/bisq/config.yaml (the Bisq production profile).
 #
 # Tip: run `./init.sh --input-folder path/to/i18n` to scaffold this automatically
 # by detecting the locales from your existing *.properties files.
@@ -12,6 +12,14 @@
 target_project_root: "/path/to/your/git/repo"
 # Folder containing the .properties files (absolute, or relative to target_project_root).
 input_folder: "/path/to/properties/files"
+
+# --- Localization format ---
+# Built-in: "java_properties". Future formats can provide the same metadata shape.
+localization_format: "java_properties"
+
+# Optional product/domain context injected into translation prompts.
+# Keep this generic for reusable configs; project-specific configs can be more precise.
+project_context: "Translate concise UI text for a software product."
 
 # --- Where translations come from before the AI step ---
 # "git"      = use the .properties files already in your repository (no external TMS).
