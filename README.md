@@ -116,6 +116,8 @@ Key settings:
 | Setting | Purpose |
 |---|---|
 | `target_project_root`, `input_folder` | Where your repo and `.properties` live. |
+| `localization_format` | File format metadata. Built-in: `java_properties`; custom mappings can describe future formats. |
+| `project_context` | Product/domain guidance injected into translation prompts. |
 | `translation_source` | `git` (default for new projects) or `transifex`. |
 | `model_name`, `review_model_name` | Translate and review models. |
 | `api_base_url` | OpenAI-compatible endpoint, e.g. a local Ollama server. |

@@ -6,6 +6,7 @@ import pytest
 import yaml
 
 from src.app_config import AppConfig, load_app_config, validate_config
+from src.localization_formats import JAVA_PROPERTIES_FORMAT
 
 
 class TestAppConfig:
@@ -31,6 +32,8 @@ class TestAppConfig:
             style_rules={},
             precomputed_style_rules_text={},
             brand_glossary=["Bisq"],
+            project_context="A desktop trading app.",
+            localization_format=JAVA_PROPERTIES_FORMAT,
             translation_queue_folder="/tmp/queue",
             translated_queue_folder="/tmp/translated",
             translation_key_ledger_file_path="/tmp/ledger.json",
@@ -42,6 +45,8 @@ class TestAppConfig:
         assert config.model_name == "gpt-4"
         assert config.dry_run is False
         assert config.language_codes == {"de": "German"}
+        assert config.project_context == "A desktop trading app."
+        assert config.localization_format == JAVA_PROPERTIES_FORMAT
 
 
 class TestLoadAppConfig:
@@ -134,9 +139,38 @@ class TestLoadAppConfig:
         assert config.quality_gate.block_on_semantic_qa_warnings is False
         assert config.quality_gate.semantic_qa_audit_scope == "changed"
         assert config.quality_gate.retained_source_word_allowlist == {}
+        assert config.brand_glossary == []
+        assert config.project_context == ""
+        assert config.localization_format == JAVA_PROPERTIES_FORMAT
         assert config.translation_key_ledger_file_path == os.path.join(
             config.project_root, "logs", "translation_key_ledger.json"
         )
+
+    def test_load_config_reads_project_context_and_format(self):
+        mock_config = {
+            "dry_run": True,
+            "project_context": "Translate for a developer tool.",
+            "brand_technical_glossary": ["Acme", "API"],
+            "localization_format": {
+                "id": "custom_json",
+                "display_name": "Custom JSON",
+                "file_extension": ".json",
+                "code_fence": "json",
+                "locale_suffix_regex": r"_([a-z]{2})\.json$",
+            },
+        }
+
+        with patch("src.app_config._load_yaml_config", return_value=mock_config):
+            with patch("os.path.exists", return_value=False):
+                with patch("src.logging_config.setup_logger") as mock_logger:
+                    mock_logger.return_value = MagicMock()
+                    with patch.dict(os.environ, {}, clear=True):
+                        config = load_app_config()
+
+        assert config.project_context == "Translate for a developer tool."
+        assert config.brand_glossary == ["Acme", "API"]
+        assert config.localization_format.id == "custom_json"
+        assert config.localization_format.file_extension == ".json"
 
     def test_load_config_with_process_all_files_enabled(self):
         """Test process_all_files can be enabled via config."""
