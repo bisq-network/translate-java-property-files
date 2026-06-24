@@ -48,6 +48,15 @@ class TestDetectLocales:
     def test_missing_folder_returns_empty(self, tmp_path):
         assert detect_locales(str(tmp_path / "nope"), source_locale="en") == []
 
+    def test_detects_locales_in_nested_subdirectories(self, tmp_path):
+        # The runtime pipeline walks the tree recursively; detection must match.
+        nested = tmp_path / "resources" / "mobile"
+        nested.mkdir(parents=True)
+        _make_props(str(nested), ["app_en.properties", "app_fr.properties"])
+        _make_props(str(tmp_path), ["top_de.properties"])
+        codes = [loc["code"] for loc in detect_locales(str(tmp_path), source_locale="en")]
+        assert codes == ["de", "fr"]
+
     def test_deduplicates_locale_across_multiple_base_files(self, tmp_path):
         _make_props(str(tmp_path), [
             "a_de.properties", "b_de.properties", "a_en.properties",
@@ -127,3 +136,25 @@ class TestWriteConfig:
         write_config(target, "a: 2\n", overwrite=True)
         with open(target, encoding="utf-8") as f:
             assert "a: 2" in f.read()
+
+
+class TestMainErrorHandling:
+    def test_main_handles_write_oserror_without_traceback(self, tmp_path, monkeypatch, capsys):
+        """A write failure (e.g. PermissionError) becomes a clean error, not a traceback."""
+        import src.init_config as init_config
+
+        folder = tmp_path / "i18n"
+        folder.mkdir()
+        (folder / "app_en.properties").write_text("k=v\n")
+        (folder / "app_de.properties").write_text("k=v\n")
+
+        def boom(*_args, **_kwargs):
+            raise PermissionError("read-only filesystem")
+
+        monkeypatch.setattr(init_config, "write_config", boom)
+        rc = init_config.main([
+            "--input-folder", str(folder),
+            "--output", str(tmp_path / "out.yaml"),
+        ])
+        assert rc == 1
+        assert "Error" in capsys.readouterr().err

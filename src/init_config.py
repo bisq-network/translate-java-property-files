@@ -56,10 +56,12 @@ def detect_locales(input_folder: str, source_locale: str = "en") -> List[Dict[st
     if not os.path.isdir(input_folder):
         return []
     codes = set()
-    for entry in os.listdir(input_folder):
-        code = extract_locale_suffix(entry)
-        if code and code != source_locale:
-            codes.add(code)
+    # Walk recursively, matching how the pipeline discovers .properties files.
+    for _root, _dirs, files in os.walk(input_folder):
+        for entry in files:
+            code = extract_locale_suffix(entry)
+            if code and code != source_locale:
+                codes.add(code)
     return [{"code": code, "name": code_to_name(code)} for code in sorted(codes)]
 
 
@@ -145,6 +147,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         write_config(args.output, render_config(config), overwrite=args.overwrite)
     except FileExistsError as exc:
         print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    except OSError as exc:
+        print(f"Error: could not write '{args.output}': {exc}", file=sys.stderr)
         return 1
 
     detected = ", ".join(loc["code"] for loc in locales) or "(none)"

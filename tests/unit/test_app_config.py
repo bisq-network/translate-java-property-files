@@ -418,6 +418,20 @@ class TestValidateConfig:
         warns = self._warnings(validate_config(cfg, path_exists=lambda p: True))
         assert not any("api_base_url" in w for w in warns)
 
+    def test_effective_base_url_overrides_config_for_validation(self):
+        """A bad OPENAI_BASE_URL override is validated even if the config value is fine."""
+        cfg = {**self.GOOD, "api_base_url": "http://localhost:11434/v1"}
+        warns = self._warnings(validate_config(
+            cfg, path_exists=lambda p: True, effective_api_base_url="localhost:bad"))
+        assert any("api_base_url" in w for w in warns)
+
+    def test_effective_base_url_valid_no_warning(self):
+        cfg = {**self.GOOD, "api_base_url": "not-a-url"}  # config value bad...
+        warns = self._warnings(validate_config(
+            cfg, path_exists=lambda p: True,
+            effective_api_base_url="https://api.example.com/v1"))  # ...but effective is good
+        assert not any("api_base_url" in w for w in warns)
+
     def test_malformed_sections_do_not_crash(self):
         cfg = {"target_project_root": "/repo", "input_folder": "/repo/i18n",
                "supported_locales": "not-a-list", "style_rules": "not-a-dict"}

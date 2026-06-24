@@ -1642,7 +1642,8 @@ def get_changed_translation_files(
                     continue
                 # Each line starts with two characters indicating status, e.g. ' M file', '?? file'.
                 status, filepath = line[:2], line[3:]
-                if status.strip().startswith('R') and ' -> ' in filepath:
+                # Renames (R) and copies (C) both use the 'old -> new' path format.
+                if status.strip()[:1] in ('R', 'C') and ' -> ' in filepath:
                     filepath = filepath.split(' -> ', 1)[1]
                 yield status.strip(), filepath
 

@@ -659,6 +659,21 @@ class TestFileDetectionLogic(unittest.TestCase):
             self.assertNotIn("desktop_de.properties", changed_basenames)
 
     @patch('subprocess.run')
+    def test_get_changed_files_handles_copy_entries(self, mock_subprocess_run):
+        """Copy entries (C) use the same 'old -> new' format as renames; use the new path."""
+        from src.translate_localization_files import get_changed_translation_files
+
+        git_output = "C  i18n/resources/mobile_en.properties -> i18n/resources/mobile_fr.properties\n"
+        mock_subprocess_run.return_value = MagicMock(stdout=git_output, stderr="", check_returncode=MagicMock())
+
+        changed_files = get_changed_translation_files("/fake/repo/i18n/resources", "/fake/repo")
+
+        changed_basenames = [os.path.basename(f) for f in changed_files]
+        self.assertIn("mobile_fr.properties", changed_basenames)
+        # The combined "old -> new" string must not survive as a path.
+        assert not any("->" in f for f in changed_files)
+
+    @patch('subprocess.run')
     def test_get_changed_files_uses_diff_base_when_env_set(self, mock_subprocess_run):
         """With TRANSLATION_DIFF_BASE set, detection uses `git diff --name-status` against the base."""
         from src.translate_localization_files import get_changed_translation_files

@@ -224,6 +224,13 @@ PULL_SOURCE_FILES=$(get_config_value "pull_source_files_from_transifex" "$CONFIG
 # projects without a Transifex setup should use "git".
 TRANSLATION_SOURCE=$(get_config_value "translation_source" "$CONFIG_FILE")
 TRANSLATION_SOURCE="${TRANSLATION_SOURCE:-transifex}"
+# Normalize case and validate; unknown values fall back to transifex with a warning
+# so a typo cannot silently change behavior.
+TRANSLATION_SOURCE=$(printf '%s' "$TRANSLATION_SOURCE" | tr '[:upper:]' '[:lower:]')
+if [[ "$TRANSLATION_SOURCE" != "git" && "$TRANSLATION_SOURCE" != "transifex" ]]; then
+    log "Unknown translation_source '$TRANSLATION_SOURCE'; defaulting to 'transifex'." "WARNING"
+    TRANSLATION_SOURCE="transifex"
+fi
 DRY_RUN=$(get_config_value "dry_run" "$CONFIG_FILE")
 
 log "Target project root from config: \"$TARGET_PROJECT_ROOT\""

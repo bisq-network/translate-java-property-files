@@ -88,12 +88,20 @@ _PLACEHOLDER_PATHS = frozenset({
 })
 
 
-def validate_config(config: Dict[str, Any], *, path_exists=os.path.exists) -> List[ConfigIssue]:
+def validate_config(
+    config: Dict[str, Any],
+    *,
+    path_exists=os.path.exists,
+    effective_api_base_url: Optional[str] = None,
+) -> List[ConfigIssue]:
     """Validate a raw config dict and return actionable issues.
 
     Pure and side-effect free (``path_exists`` is injectable for testing). Callers
     decide how to surface the result; ``load_app_config`` logs it. The loader stays
     forgiving — validation reports problems, it does not raise.
+
+    ``effective_api_base_url`` lets the caller validate the *resolved* endpoint
+    (e.g. after the ``OPENAI_BASE_URL`` env override) instead of the raw config value.
     """
     issues: List[ConfigIssue] = []
 
@@ -148,8 +156,9 @@ def validate_config(config: Dict[str, Any], *, path_exists=os.path.exists) -> Li
                     f"style_rules references locale '{code}', which is not in supported_locales."
                 ))
 
-    # OpenAI-compatible endpoint should be a URL.
-    base_url = config.get("api_base_url")
+    # OpenAI-compatible endpoint should be a URL. Validate the effective value
+    # (resolved override) when provided, else the raw config value.
+    base_url = effective_api_base_url if effective_api_base_url is not None else config.get("api_base_url")
     if base_url and not str(base_url).strip().startswith(("http://", "https://")):
         issues.append(ConfigIssue(
             "warning",
@@ -397,8 +406,12 @@ def load_app_config() -> AppConfig:
     # Log .env status now that logger is available
     _log_dotenv_status(logger, project_root)
 
+    # Resolve the effective OpenAI-compatible endpoint (env override wins) so the
+    # client and validation both see the same value.
+    api_base_url = _resolve_api_base_url(config)
+
     # Validate the configuration and surface actionable problems (non-fatal).
-    _log_config_issues(validate_config(config), logger)
+    _log_config_issues(validate_config(config, effective_api_base_url=api_base_url), logger)
 
     # Build language mappings
     locales_list = config.get('supported_locales', [])
@@ -457,8 +470,7 @@ def load_app_config() -> AppConfig:
     if not os.path.isabs(translation_key_ledger_file_path):
         translation_key_ledger_file_path = os.path.join(project_root, translation_key_ledger_file_path)
 
-    # Resolve optional OpenAI-compatible endpoint and create the client
-    api_base_url = _resolve_api_base_url(config)
+    # Create the client against the endpoint resolved earlier.
     openai_client = _create_openai_client(dry_run, logger, api_base_url)
 
     return AppConfig(

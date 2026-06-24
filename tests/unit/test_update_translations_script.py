@@ -95,6 +95,18 @@ def test_translation_source_is_read_and_defaults_to_transifex():
     assert 'TRANSLATION_SOURCE="${TRANSLATION_SOURCE:-transifex}"' in script
 
 
+def test_translation_source_is_normalized_and_validated():
+    """translation_source is lowercased and unknown values fall back with a warning."""
+    script = (REPO_ROOT / "update-translations.sh").read_text()
+
+    assert "tr '[:upper:]' '[:lower:]'" in script
+    assert '"$TRANSLATION_SOURCE" != "git" && "$TRANSLATION_SOURCE" != "transifex"' in script
+    # Normalization must happen before the git-source guard is evaluated.
+    norm_index = script.index("tr '[:upper:]' '[:lower:]'")
+    guard_index = script.index('"$TRANSLATION_SOURCE" == "git"')
+    assert norm_index < guard_index
+
+
 def test_transifex_pull_is_skipped_when_source_is_git():
     """A git-source project must skip the Transifex pull entirely."""
     script = (REPO_ROOT / "update-translations.sh").read_text()
