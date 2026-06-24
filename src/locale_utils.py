@@ -10,7 +10,7 @@ from typing import Optional
 
 from src.localization_formats import JAVA_PROPERTIES_FORMAT
 
-LOCALE_SUFFIX_RE = JAVA_PROPERTIES_FORMAT._compiled_locale_suffix_regex
+LOCALE_SUFFIX_RE = JAVA_PROPERTIES_FORMAT.compiled_locale_suffix_regex
 
 
 def extract_locale_suffix(filename: str) -> Optional[str]:

@@ -24,6 +24,14 @@ def test_java_properties_format_matches_existing_filename_conventions():
     assert fmt.source_filename("mu_sig_de.properties", ["de", "sig"]) == "mu_sig.properties"
 
 
+def test_java_properties_format_exposes_cached_compiled_regex():
+    assert JAVA_PROPERTIES_FORMAT.compiled_locale_suffix_regex.search("messages_de.properties")
+    assert (
+        JAVA_PROPERTIES_FORMAT.compiled_locale_suffix_regex
+        is JAVA_PROPERTIES_FORMAT.compiled_locale_suffix_regex
+    )
+
+
 def test_custom_format_can_describe_future_locale_file_conventions():
     fmt = LocalizationFormat(
         id="json_flat",
@@ -61,3 +69,24 @@ def test_load_localization_format_allows_overrides_for_future_formats():
 def test_load_localization_format_rejects_unknown_registry_id():
     with pytest.raises(ValueError, match="Unsupported localization_format"):
         load_localization_format("android_xml")
+
+
+@pytest.mark.asyncio
+async def test_process_translation_queue_rejects_non_java_properties_format(monkeypatch, tmp_path):
+    from src import translate_localization_files as translation_pipeline
+
+    fmt = LocalizationFormat(
+        id="json_flat",
+        display_name="Flat JSON",
+        file_extension=".json",
+        code_fence="json",
+        locale_suffix_regex=r"_([a-z]{2})\.json$",
+    )
+    monkeypatch.setattr(translation_pipeline, "LOCALIZATION_FORMAT", fmt)
+
+    with pytest.raises(NotImplementedError, match="java_properties"):
+        await translation_pipeline.process_translation_queue(
+            str(tmp_path),
+            str(tmp_path / "translated"),
+            str(tmp_path / "glossary.json"),
+        )

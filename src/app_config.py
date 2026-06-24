@@ -485,7 +485,10 @@ def load_app_config() -> AppConfig:
         translation_key_ledger_file_path = os.path.join(project_root, translation_key_ledger_file_path)
 
     project_context = str(config.get('project_context') or '').strip()
-    localization_format = load_localization_format(config.get('localization_format'))
+    try:
+        localization_format = load_localization_format(config.get('localization_format'))
+    except ValueError:
+        localization_format = JAVA_PROPERTIES_FORMAT
 
     # Create the client against the endpoint resolved earlier.
     openai_client = _create_openai_client(dry_run, logger, api_base_url)
@@ -507,7 +510,7 @@ def load_app_config() -> AppConfig:
         retranslate_identical_source_strings=retranslate_identical_source_strings,
         style_rules=style_rules,
         precomputed_style_rules_text=precomputed_style_rules_text,
-        brand_glossary=[str(term) for term in config.get('brand_technical_glossary', [])],
+        brand_glossary=[str(term) for term in (config.get('brand_technical_glossary') or [])],
         translation_queue_folder=translation_queue_folder,
         translated_queue_folder=translated_queue_folder,
         translation_key_ledger_file_path=translation_key_ledger_file_path,

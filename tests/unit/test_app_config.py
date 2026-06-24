@@ -172,6 +172,36 @@ class TestLoadAppConfig:
         assert config.localization_format.id == "custom_json"
         assert config.localization_format.file_extension == ".json"
 
+    def test_load_config_with_invalid_format_falls_back_to_java_properties(self):
+        mock_config = {
+            "dry_run": True,
+            "localization_format": "unknown_format",
+        }
+
+        with patch("src.app_config._load_yaml_config", return_value=mock_config):
+            with patch("os.path.exists", return_value=False):
+                with patch("src.logging_config.setup_logger") as mock_logger:
+                    mock_logger.return_value = MagicMock()
+                    with patch.dict(os.environ, {}, clear=True):
+                        config = load_app_config()
+
+        assert config.localization_format == JAVA_PROPERTIES_FORMAT
+
+    def test_load_config_treats_null_brand_glossary_as_empty(self):
+        mock_config = {
+            "dry_run": True,
+            "brand_technical_glossary": None,
+        }
+
+        with patch("src.app_config._load_yaml_config", return_value=mock_config):
+            with patch("os.path.exists", return_value=False):
+                with patch("src.logging_config.setup_logger") as mock_logger:
+                    mock_logger.return_value = MagicMock()
+                    with patch.dict(os.environ, {}, clear=True):
+                        config = load_app_config()
+
+        assert config.brand_glossary == []
+
     def test_load_config_with_process_all_files_enabled(self):
         """Test process_all_files can be enabled via config."""
         mock_config = {

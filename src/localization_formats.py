@@ -10,7 +10,7 @@ through the translation pipeline.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, Optional
 
 
@@ -23,6 +23,7 @@ class LocalizationFormat:
     file_extension: str
     code_fence: str
     locale_suffix_regex: str
+    _compiled_regex: re.Pattern[str] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -32,10 +33,16 @@ class LocalizationFormat:
         compiled = re.compile(self.locale_suffix_regex)
         if compiled.groups < 1 and "locale" not in compiled.groupindex:
             raise ValueError("locale_suffix_regex must capture the locale as group 1 or named group 'locale'.")
+        object.__setattr__(self, "_compiled_regex", compiled)
+
+    @property
+    def compiled_locale_suffix_regex(self) -> re.Pattern[str]:
+        """Return the cached locale-suffix regex for this format."""
+        return self._compiled_regex
 
     @property
     def _compiled_locale_suffix_regex(self) -> re.Pattern[str]:
-        return re.compile(self.locale_suffix_regex)
+        return self.compiled_locale_suffix_regex
 
     def is_supported_file(self, filename: str) -> bool:
         """Return true when ``filename`` uses this format's file extension."""

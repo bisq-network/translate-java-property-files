@@ -39,7 +39,7 @@ from openai.types.chat import (
 from tqdm.asyncio import tqdm
 
 from src.app_config import load_app_config
-from src.localization_formats import LocalizationFormat
+from src.localization_formats import JAVA_PROPERTIES_FORMAT, LocalizationFormat
 from src.properties_parser import parse_properties_file, reassemble_file
 from src.usage_tracker import usage_tracker
 from src.cost_estimator import estimate_run_cost, format_estimate
@@ -1749,6 +1749,13 @@ async def process_translation_queue(
         - A dictionary of skipped files, mapping filename to a list of error strings.
         - Total number of keys translated across all files.
     """
+    if LOCALIZATION_FORMAT.id != JAVA_PROPERTIES_FORMAT.id:
+        raise NotImplementedError(
+            "Only localization_format=java_properties is supported by the current parser pipeline. "
+            "Add format-specific parser, serializer, linter, and placeholder hooks before processing "
+            f"{LOCALIZATION_FORMAT.id} files."
+        )
+
     properties_files = []
     for root, _, files in os.walk(translation_queue_folder):
         for name in files:
