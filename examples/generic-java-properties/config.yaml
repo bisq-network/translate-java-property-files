@@ -1,5 +1,5 @@
 # Generic Java .properties example profile.
-target_project_root: "."
+target_project_root: "examples/generic-java-properties"
 input_folder: "resources"
 localization_format: "java_properties"
 localization_layout:

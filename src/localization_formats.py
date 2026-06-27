@@ -123,6 +123,33 @@ _FORMAT_REGISTRY: Dict[str, LocalizationFormat] = {
     JAVA_PROPERTIES_FORMAT.id: JAVA_PROPERTIES_FORMAT,
     JSON_FORMAT.id: JSON_FORMAT,
 }
+_BUILTIN_FORMAT_IDS = frozenset(_FORMAT_REGISTRY)
+
+
+def list_localization_formats() -> Dict[str, LocalizationFormat]:
+    """Return registered localization formats keyed by format id."""
+    return dict(_FORMAT_REGISTRY)
+
+
+def register_localization_format(
+    localization_format: LocalizationFormat,
+    *,
+    replace: bool = False,
+) -> None:
+    """Register a localization format for config loading and discovery."""
+    existing = _FORMAT_REGISTRY.get(localization_format.id)
+    if existing is not None and not replace:
+        raise ValueError(f"Localization format '{localization_format.id}' is already registered.")
+    if localization_format.id in _BUILTIN_FORMAT_IDS and existing is not localization_format:
+        raise ValueError(f"Cannot replace built-in localization format '{localization_format.id}'.")
+    _FORMAT_REGISTRY[localization_format.id] = localization_format
+
+
+def unregister_localization_format(format_id: str) -> None:
+    """Remove a non-built-in localization format from the registry."""
+    if format_id in _BUILTIN_FORMAT_IDS:
+        raise ValueError(f"Cannot unregister built-in localization format '{format_id}'.")
+    _FORMAT_REGISTRY.pop(format_id, None)
 
 
 def load_localization_format(raw_value: Any) -> LocalizationFormat:

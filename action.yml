@@ -94,7 +94,7 @@ runs:
         else
           export TRANSLATION_DIFF_BASE="$DIFF_BASE_INPUT"
         fi
-        python -m src.translate_localization_files
+        python -m src.cli run --config "$TRANSLATOR_CONFIG_FILE"
 
     - name: Open pull request
       if: ${{ inputs.open-pr == 'true' }}
