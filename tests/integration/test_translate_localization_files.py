@@ -145,6 +145,7 @@ async def test_process_translation_queue_translates_json_locale_file(integration
     provider.is_retryable_error.return_value = False
 
     with patch('src.translate_localization_files.LOCALIZATION_FORMAT', JSON_FORMAT), \
+         patch('src.translate_localization_files.LANGUAGE_CODES', {'de': 'German'}), \
          patch('src.translate_localization_files.MODEL_PROVIDER', provider), \
          patch('src.translate_localization_files.TRANSLATION_KEY_LEDGER_FILE_PATH',
                os.path.join(env['input_folder'], 'ledger.json')), \
@@ -205,6 +206,7 @@ async def test_process_translation_queue_translates_json_locale_directory_layout
 
     with patch('src.translate_localization_files.LOCALIZATION_FORMAT', JSON_FORMAT), \
          patch('src.translate_localization_files.LOCALIZATION_LAYOUT', layout), \
+         patch('src.translate_localization_files.LANGUAGE_CODES', {'de': 'German'}), \
          patch('src.translate_localization_files.MODEL_PROVIDER', provider), \
          patch('src.translate_localization_files.TRANSLATION_KEY_LEDGER_FILE_PATH',
                os.path.join(env['input_folder'], 'ledger.json')), \

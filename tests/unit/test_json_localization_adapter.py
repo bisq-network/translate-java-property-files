@@ -191,6 +191,40 @@ def test_json_adapter_synchronizes_array_string_keys(tmp_path):
     }
 
 
+def test_json_adapter_deletes_extra_array_entries_from_highest_index(tmp_path):
+    source_path = tmp_path / "messages.json"
+    target_path = tmp_path / "messages_de.json"
+    write_json(
+        source_path,
+        {
+            "steps": [
+                {"title": "First"},
+            ],
+        },
+    )
+    write_json(
+        target_path,
+        {
+            "steps": [
+                {"title": "Erster"},
+                {"title": "Legacy second"},
+                {"title": "Legacy third"},
+            ],
+        },
+    )
+
+    adapter = get_localization_adapter(JSON_FORMAT)
+    missing_keys, extra_keys = adapter.synchronize_keys(str(target_path), str(source_path))
+
+    assert missing_keys == set()
+    assert extra_keys == {"/steps/1/title", "/steps/2/title"}
+    assert json.loads(target_path.read_text(encoding="utf-8")) == {
+        "steps": [
+            {"title": "Erster"},
+        ],
+    }
+
+
 def test_json_adapter_lints_invalid_json(tmp_path):
     file_path = tmp_path / "messages.json"
     file_path.write_text('{"hello": "Hello"', encoding="utf-8")

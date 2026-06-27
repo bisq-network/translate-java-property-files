@@ -10,7 +10,7 @@ from typing import Dict, Match, Tuple
 
 _HTML_TAG = r"<[^<>]+>"
 _I18NEXT_TOKEN = r"\{\{[^{}\n]+\}\}"
-_BRACE_TOKEN = r"\{[A-Za-z0-9_.:,\-\s]+(?:,[^{}\n]+)?\}"
+_BRACE_TOKEN = r"\{[A-Za-z0-9_][^{}\n]*\}"
 _PYTHON_NAMED_PRINTF = r"%\([^)]+\)[#0 +\-]*(?:\d+|\*)?(?:\.(?:\d+|\*))?[a-zA-Z]"
 _POSITIONAL_PRINTF = r"%(?:\d+\$)?[#0 +\-]*(?:\d+|\*)?(?:\.(?:\d+|\*))?[a-zA-Z@]"
 

@@ -169,8 +169,24 @@ def test_publish_adapter_supports_json_translation_files():
 
     assert "translation_file_extension_regex()" in script
     assert "format_id=$(yq -r '(.localization_format.id // .localization_format // \"java_properties\")'" in script
+    assert "extension=$(yq -r '(.localization_format.file_extension // \"\")'" in script
     assert "json)\n            printf 'json'" in script
     assert "java_properties|\"\"|\"null\")\n            printf 'properties'" in script
+
+
+def test_translation_file_extension_override_precedes_format_id_defaults():
+    script = (REPO_ROOT / "update-translations.sh").read_text()
+
+    function_body = script[
+        script.index("translation_file_extension_regex() {"):
+        script.index("collect_changed_translation_files()")
+    ]
+
+    extension_normalize_index = function_body.index('extension="${extension#.}"')
+    case_index = function_body.index('case "$format_id" in')
+
+    assert extension_normalize_index < case_index
+    assert "return" in function_body[extension_normalize_index:case_index]
 
 
 def test_pr_body_includes_token_usage_cost_summary():

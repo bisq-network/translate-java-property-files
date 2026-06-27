@@ -89,6 +89,60 @@ class TestQuoteEscaping(unittest.IsolatedAsyncioTestCase):
         
         self.assertEqual(output_content, "test.key=Dies ist ein ''{0}'' Beispiel.")
 
+    @patch('src.translate_localization_files.run_post_translation_validation')
+    @patch('src.translate_localization_files.holistic_review_async', new_callable=AsyncMock)
+    @patch('src.translate_localization_files.run_pre_translation_validation')
+    @patch('src.translate_localization_files.load_glossary')
+    @patch('src.translate_localization_files.get_working_tree_changed_keys')
+    async def test_review_corrections_are_escaped_before_writing(
+            self,
+            mock_git_changed_keys,
+            mock_load_glossary,
+            mock_pre_validator,
+            mock_holistic_review,
+            mock_post_validator,
+    ):
+        from src.translate_localization_files import process_translation_queue, LANGUAGE_CODES, NAME_TO_CODE
+
+        mock_pre_validator.return_value = ([], {"test.key"})
+        mock_post_validator.return_value = True
+        mock_holistic_review.return_value = {"test.key": "C'est le choix {0}."}
+        mock_load_glossary.return_value = {}
+        mock_git_changed_keys.return_value = set()
+
+        provider = MagicMock()
+        provider.create_chat_completion = AsyncMock(return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="Brouillon {0}."))]
+        ))
+        provider.count_tokens.side_effect = lambda text, model: len(text.split())
+        provider.estimate_run_cost.return_value = MagicMock()
+        provider.format_estimate.return_value = "estimate"
+        provider.is_retryable_error.return_value = False
+
+        source_file_path = os.path.join(self.test_dir, 'app.properties')
+        with open(source_file_path, 'w', encoding='utf-8') as f:
+            f.write("test.key=This has a {0} placeholder.")
+
+        target_file_path = os.path.join(self.queue_dir, 'app_fr.properties')
+        with open(target_file_path, 'w', encoding='utf-8') as f:
+            f.write("test.key=This has a {0} placeholder.")
+
+        with patch.dict(LANGUAGE_CODES, {"fr": "French"}), \
+             patch.dict(NAME_TO_CODE, {"french": "fr"}), \
+             patch('src.translate_localization_files.INPUT_FOLDER', self.test_dir), \
+             patch('src.translate_localization_files.MODEL_PROVIDER', provider):
+            await process_translation_queue(
+                translation_queue_folder=self.queue_dir,
+                translated_queue_folder=self.translated_dir,
+                glossary_file_path="dummy_path.json"
+            )
+
+        output_file_path = os.path.join(self.translated_dir, 'app_fr.properties')
+        with open(output_file_path, 'r', encoding='utf-8') as f:
+            output_content = f.read().strip()
+
+        self.assertEqual(output_content, "test.key=C''est le choix {0}.")
+
     def test_reassemble_with_single_quotes(self):
         # This test only needs reassemble_file, no circular import.
         parsed_lines = [

@@ -22,8 +22,8 @@ Commit the generated `config.yaml`.
 
 If your JSON files use native locale directories such as
 `locales/en/messages.json` and `locales/de/messages.json`, set
-`localization_layout.id: locale_directory` and `source_locale: en` in that
-config.
+`localization_layout.id: locale_directory` and
+`localization_layout.source_locale: en` in that config.
 
 ## 2. Add the workflow
 

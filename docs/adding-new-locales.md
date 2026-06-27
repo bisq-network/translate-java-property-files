@@ -331,6 +331,8 @@ style_rules:
   `default_th.json`, or `default.th.json`).
 - For `locale_directory`, check that the locale is a path segment
   (e.g., `locales/th/messages.json`).
+- For `locale_filename`, check that the locale is the filename stem
+  (e.g., `locales/th.json`).
 - Ensure the locale is in the `supported_locales` list
 
 #### Issue: Style rules not applied
@@ -374,6 +376,17 @@ localization_layout:
 ```
 
 This maps `locales/de/messages.json` back to `locales/en/messages.json`.
+
+For JSON projects that use locale filenames, set:
+
+```yaml
+localization_format: "json"
+localization_layout:
+  id: "locale_filename"
+  source_locale: "en"
+```
+
+This maps `locales/de.json` back to `locales/en.json`.
 
 ## Best Practices
 

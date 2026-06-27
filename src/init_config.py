@@ -103,6 +103,9 @@ def detect_locales(
     return [{"code": code, "name": code_to_name(code)} for code in sorted(codes)]
 
 
+_LOCALE_CODE_RE = re.compile(r"^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$")
+
+
 def _candidate_locale_codes(relative_path: str, localization_format: LocalizationFormat) -> List[str]:
     """Return broad locale candidates for autodetection before config exists."""
     candidates: set[str] = set()
@@ -120,7 +123,7 @@ def _candidate_locale_codes(relative_path: str, localization_format: Localizatio
 
 
 def _looks_like_locale_code(value: str) -> bool:
-    return bool(value) and bool(re.match(r"^[a-z]{2,3}(?:[-_][A-Za-z]{2,4})?$", value))
+    return bool(value) and bool(_LOCALE_CODE_RE.fullmatch(value))
 
 
 def build_config(

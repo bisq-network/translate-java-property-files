@@ -172,6 +172,33 @@ def _extract_properties_entry(diff_line: str) -> Optional[Tuple[str, str]]:
     return None
 
 
+def _matching_translation_keys(key_hint: str, translations: Mapping[str, str]) -> List[str]:
+    if key_hint in translations:
+        return [key_hint]
+    hint_leaf = key_hint.rsplit("/", 1)[-1]
+    return sorted(
+        key
+        for key in translations
+        if key.rsplit("/", 1)[-1] == hint_leaf
+    )
+
+
+def _extract_changed_entries(
+    diff_line: str,
+    localization_format: LocalizationFormat,
+    translations: Optional[Mapping[str, str]],
+) -> List[Tuple[str, str]]:
+    if localization_format.id == JAVA_PROPERTIES_FORMAT.id:
+        entry = _extract_properties_entry(diff_line)
+        return [entry] if entry else []
+
+    adapter = get_localization_adapter(localization_format)
+    key_hint = adapter.extract_changed_key_from_diff_line(diff_line)
+    if not key_hint or translations is None:
+        return []
+    return [(key, translations[key]) for key in _matching_translation_keys(key_hint, translations)]
+
+
 def iter_added_properties_entries(diff_text: str) -> Iterable[Tuple[str, str, str]]:
     for change in iter_translation_changes_from_diff(
         diff_text=diff_text,
@@ -227,9 +254,8 @@ def iter_translation_changes_from_diff(
     adapter = get_localization_adapter(localization_format)
     source_cache: Dict[Path, Dict[str, str]] = {}
     target_cache: Dict[Path, Dict[str, str]] = {}
-    expanded_files: set[str] = set()
     current_file: Optional[str] = None
-    removed_values: Dict[str, str] = {}
+    removed_values: Dict[str, Optional[str]] = {}
 
     for line in diff_text.splitlines():
         if line.startswith("+++ /dev/null"):
@@ -239,41 +265,6 @@ def iter_translation_changes_from_diff(
         if line.startswith("+++ b/"):
             current_file = line[len("+++ b/") :]
             removed_values = {}
-            rel_to_input = _relpath(str(repo_root_path / current_file), str(input_folder_path))
-            if (
-                localization_format.id != JAVA_PROPERTIES_FORMAT.id
-                and localization_layout.is_target_file(rel_to_input, locale_codes, localization_format)
-                and current_file not in expanded_files
-            ):
-                expanded_files.add(current_file)
-                changed_path = repo_root_path / current_file
-                if not changed_path.exists():
-                    continue
-                locale_code = (
-                    localization_layout.extract_locale(rel_to_input, locale_codes, localization_format) or ""
-                )
-                source_path = input_folder_path / localization_layout.source_path_for_target(
-                    rel_to_input,
-                    locale_codes,
-                    localization_format,
-                )
-                if changed_path not in target_cache:
-                    _, target_cache[changed_path] = adapter.parse_file(str(changed_path))
-                source_translations: Dict[str, str] = {}
-                if hydrate_source and source_path.exists():
-                    if source_path not in source_cache:
-                        _, source_cache[source_path] = adapter.parse_file(str(source_path))
-                    source_translations = source_cache[source_path]
-                for key in sorted(target_cache[changed_path]):
-                    yield TranslationChange(
-                        file=_relpath(str(changed_path), str(input_folder_path)),
-                        locale_code=locale_code,
-                        key=key,
-                        source_value=source_translations.get(key),
-                        old_value=None,
-                        new_value=target_cache[changed_path][key],
-                    )
-                current_file = None
             continue
         if not current_file or not localization_format.is_supported_file(current_file):
             continue
@@ -287,21 +278,30 @@ def iter_translation_changes_from_diff(
         if line.startswith("---"):
             continue
         if line.startswith("-"):
-            entry = _extract_properties_entry(line[1:])
-            if entry:
-                key, value = entry
+            for key, value in _extract_changed_entries(line[1:], localization_format, None):
                 removed_values[key] = value
             continue
         if not line.startswith("+"):
             continue
 
-        entry = _extract_properties_entry(line[1:])
-        if not entry:
-            continue
-        key, target_value = entry
         changed_path = repo_root_path / current_file
+        target_translations: Optional[Mapping[str, str]] = None
+        if localization_format.id != JAVA_PROPERTIES_FORMAT.id:
+            if not changed_path.exists():
+                continue
+            if changed_path not in target_cache:
+                _, target_cache[changed_path] = adapter.parse_file(str(changed_path))
+            target_translations = target_cache[changed_path]
+
+        changed_entries = _extract_changed_entries(
+            line[1:],
+            localization_format,
+            target_translations,
+        )
+        if not changed_entries:
+            continue
         locale_code = localization_layout.extract_locale(rel_to_input, locale_codes, localization_format) or ""
-        source_value = None
+        source_translations: Dict[str, str] = {}
 
         if hydrate_source and locale_code:
             source_rel = localization_layout.source_path_for_target(
@@ -313,16 +313,17 @@ def iter_translation_changes_from_diff(
             if source_path.exists():
                 if source_path not in source_cache:
                     _, source_cache[source_path] = adapter.parse_file(str(source_path))
-                source_value = source_cache[source_path].get(key)
+                source_translations = source_cache[source_path]
 
-        yield TranslationChange(
-            file=_relpath(str(changed_path), str(input_folder_path)),
-            locale_code=locale_code,
-            key=key,
-            source_value=source_value,
-            old_value=removed_values.pop(key, None),
-            new_value=target_value,
-        )
+        for key, target_value in changed_entries:
+            yield TranslationChange(
+                file=_relpath(str(changed_path), str(input_folder_path)),
+                locale_code=locale_code,
+                key=key,
+                source_value=source_translations.get(key),
+                old_value=removed_values.pop(key, None),
+                new_value=target_value,
+            )
 
 
 def load_semantic_rules(raw_rules: Iterable[Dict[str, Any]]) -> List[SemanticRule]:

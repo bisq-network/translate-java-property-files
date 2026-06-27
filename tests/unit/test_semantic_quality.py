@@ -9,6 +9,7 @@ from src.semantic_quality import (
     analyze_all_translation_entries,
     evaluate_retained_source_words,
     evaluate_semantic_rules,
+    iter_translation_changes_from_diff,
     load_semantic_rules,
 )
 from src.translation_quality_gate import (
@@ -266,6 +267,43 @@ def test_full_semantic_audit_scans_json_locale_directory_entries(tmp_path):
     assert stats.findings_count == 1
     assert stats.examples[0]["file"] == "es/common.json"
     assert stats.examples[0]["key"] == "/label"
+
+
+def test_changed_json_diff_yields_only_changed_leaf(tmp_path):
+    repo_root = tmp_path
+    input_folder = repo_root / "locales"
+    layout = LocalizationLayout(id="locale_directory", source_locale="en")
+    _write_json(
+        input_folder / "en" / "common.json",
+        {
+            "title": "Open trades",
+            "steps": [{"label": "Review details"}],
+        },
+    )
+    _write_json(
+        input_folder / "de" / "common.json",
+        {
+            "title": "Open trades",
+            "steps": [{"label": "Review details"}],
+        },
+    )
+    diff_text = """diff --git a/locales/de/common.json b/locales/de/common.json
++++ b/locales/de/common.json
++  "title": "Open trades",
+"""
+
+    changes = list(iter_translation_changes_from_diff(
+        diff_text=diff_text,
+        repo_root=str(repo_root),
+        input_folder=str(input_folder),
+        locale_codes=["de"],
+        localization_format=JSON_FORMAT,
+        localization_layout=layout,
+    ))
+
+    assert [(change.key, change.new_value) for change in changes] == [
+        ("/title", "Open trades"),
+    ]
 
 
 def test_feedback_rules_load_review_source_metadata():

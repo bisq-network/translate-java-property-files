@@ -1,6 +1,8 @@
 from pathlib import Path
 import json
 
+import pytest
+
 from src.localization_formats import JSON_FORMAT
 from src.localization_layouts import LocalizationLayout
 from src.translation_quality_gate import (
@@ -9,6 +11,7 @@ from src.translation_quality_gate import (
     analyze_source_identical_changes,
     build_quality_gate_report,
     load_quality_gate_config,
+    load_quality_gate_localization_metadata,
     load_validation_summary,
     render_quality_gate_markdown,
 )
@@ -102,13 +105,28 @@ def test_source_identical_gate_supports_json_locale_directory_layout(tmp_path):
         localization_layout=layout,
     )
 
-    assert stats.changed_entries_count == 3
-    assert stats.source_identical_count == 2
-    assert stats.unexpected_source_identical_count == 2
+    assert stats.changed_entries_count == 1
+    assert stats.source_identical_count == 1
+    assert stats.unexpected_source_identical_count == 1
     assert stats.examples == [
-        {"file": "de/common.json", "key": "/steps/0/label", "value": "Review details"},
         {"file": "de/common.json", "key": "/title", "value": "Open trades"},
     ]
+
+
+def test_quality_gate_localization_metadata_rejects_invalid_format(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("localization_format: unknown\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsupported localization_format"):
+        load_quality_gate_localization_metadata(str(config_path))
+
+
+def test_quality_gate_localization_metadata_rejects_invalid_layout(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("localization_layout: unknown\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsupported localization_layout"):
+        load_quality_gate_localization_metadata(str(config_path))
 
 
 def test_quality_gate_blocks_many_unexpected_source_identical_changes(tmp_path):

@@ -198,6 +198,23 @@ class TestLoadAppConfig:
 
         assert config.localization_format == JAVA_PROPERTIES_FORMAT
 
+    def test_load_config_with_invalid_layout_preserves_source_locale(self):
+        mock_config = {
+            "dry_run": True,
+            "source_locale": "fr",
+            "localization_layout": "unknown_layout",
+        }
+
+        with patch("src.app_config._load_yaml_config", return_value=mock_config):
+            with patch("os.path.exists", return_value=False):
+                with patch("src.logging_config.setup_logger") as mock_logger:
+                    mock_logger.return_value = MagicMock()
+                    with patch.dict(os.environ, {}, clear=True):
+                        config = load_app_config()
+
+        assert config.localization_layout.id == "suffix"
+        assert config.localization_layout.source_locale == "fr"
+
     def test_load_config_treats_null_brand_glossary_as_empty(self):
         mock_config = {
             "dry_run": True,

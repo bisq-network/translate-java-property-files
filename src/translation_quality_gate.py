@@ -243,18 +243,11 @@ def load_quality_gate_localization_metadata(
     with open(config_path, "r", encoding="utf-8") as file:
         raw_config = yaml.safe_load(file) or {}
 
-    try:
-        localization_format = load_localization_format(raw_config.get("localization_format"))
-    except ValueError:
-        localization_format = JAVA_PROPERTIES_FORMAT
-
-    try:
-        localization_layout = load_localization_layout(
-            raw_config.get("localization_layout"),
-            source_locale=str(raw_config.get("source_locale") or "en"),
-        )
-    except ValueError:
-        localization_layout = SUFFIX_LAYOUT
+    localization_format = load_localization_format(raw_config.get("localization_format"))
+    localization_layout = load_localization_layout(
+        raw_config.get("localization_layout"),
+        source_locale=str(raw_config.get("source_locale") or "en"),
+    )
 
     return localization_format, localization_layout
 

@@ -282,6 +282,13 @@ def _delete_json_path(root: Dict, path: Sequence[str]) -> None:
                 parent.pop(index)
 
 
+def _json_delete_sort_key(path: Sequence[str]) -> Tuple[int, Tuple[Tuple[int, object], ...]]:
+    return (
+        -len(path),
+        tuple((0, -int(segment)) if segment.isdigit() else (1, segment) for segment in path),
+    )
+
+
 def _json_document_from_parsed_lines(parsed_lines: ParsedLines) -> Dict:
     for line in parsed_lines:
         if line.get("type") == "document":
@@ -327,7 +334,7 @@ def synchronize_json_keys(target_file_path: str, source_file_path: str) -> Tuple
     source_payload = _json_document_from_parsed_lines(source_parsed_lines)
     target_payload = _json_document_from_parsed_lines(target_parsed_lines)
 
-    for key in sorted(extra_keys):
+    for key in sorted(extra_keys, key=lambda key: _json_delete_sort_key(target_paths[key])):
         _delete_json_path(target_payload, target_paths[key])
 
     for line in source_parsed_lines:

@@ -72,16 +72,16 @@ class TestDetectLocales:
 
     def test_detects_json_locale_suffixes_when_requested(self, tmp_path):
         _make_json(str(tmp_path), [
-            "app.json", "app_en.json", "app_de.json", "messages.pt-BR.json",
+            "app.json", "app_en.json", "app_de.json", "messages.pt-BR.json", "messages.es-419.json",
         ])
         codes = [
             loc["code"]
             for loc in detect_locales(str(tmp_path), source_locale="en", localization_format="json")
         ]
-        assert codes == ["de", "pt-BR"]
+        assert codes == ["de", "es-419", "pt-BR"]
 
     def test_detects_json_locale_directory_layout(self, tmp_path):
-        for rel_path in ["en/common.json", "de/common.json", "fr/common.json"]:
+        for rel_path in ["en/common.json", "de/common.json", "es-419/common.json", "fr/common.json"]:
             path = tmp_path / rel_path
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('{"key":"value"}\n', encoding="utf-8")
@@ -96,7 +96,22 @@ class TestDetectLocales:
             )
         ]
 
-        assert codes == ["de", "fr"]
+        assert codes == ["de", "es-419", "fr"]
+
+    def test_detects_json_locale_filename_layout_with_numeric_region(self, tmp_path):
+        _make_json(str(tmp_path), ["en.json", "es-419.json"])
+
+        codes = [
+            loc["code"]
+            for loc in detect_locales(
+                str(tmp_path),
+                source_locale="en",
+                localization_format="json",
+                localization_layout={"id": "locale_filename", "source_locale": "en"},
+            )
+        ]
+
+        assert codes == ["es-419"]
 
 
 class TestCodeToName:

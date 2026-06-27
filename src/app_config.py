@@ -509,7 +509,10 @@ def load_app_config() -> AppConfig:
             source_locale=str(config.get('source_locale') or 'en'),
         )
     except ValueError:
-        localization_layout = SUFFIX_LAYOUT
+        localization_layout = load_localization_layout(
+            None,
+            source_locale=str(config.get('source_locale') or 'en'),
+        )
 
     # Create the provider against the endpoint resolved earlier.
     model_provider = _create_model_provider(

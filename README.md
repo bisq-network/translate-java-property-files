@@ -226,8 +226,10 @@ journalctl --disk-usage
   `docs/llm/debug-docker-service.md`.
 * **No locales detected by `./init.sh`** — your files may not use a supported
   locale filename convention such as `name_<locale>.properties`, `name_<locale>.json`,
-  `name.<locale>.json`, or `locales/<locale>/name.json`; add `supported_locales`
-  manually.
+  `name.<locale>.json`, `locales/<locale>/name.json`, or `locales/<locale>.json`.
+  If your repository uses locale-directory or locale-filename paths, rerun
+  `./init.sh` with the matching `--localization-layout` before adding
+  `supported_locales` manually.
 * **Disk space** — see [Maintenance](#-maintenance) above.
 
 ## Contributing

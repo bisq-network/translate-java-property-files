@@ -14,6 +14,9 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, Optional
 
 
+_BCP47_LOCALE_CODE = r"[a-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*"
+
+
 @dataclass(frozen=True)
 class LocalizationFormat:
     """Metadata and filename helpers for one localization file format."""
@@ -105,7 +108,7 @@ JAVA_PROPERTIES_FORMAT = LocalizationFormat(
     display_name="Java .properties",
     file_extension=".properties",
     code_fence="properties",
-    locale_suffix_regex=r".*_([a-z]{2,3}(?:[-_][A-Za-z]{2,4})?)\.properties$",
+    locale_suffix_regex=rf".*_({_BCP47_LOCALE_CODE})\.properties$",
 )
 
 JSON_FORMAT = LocalizationFormat(
@@ -113,7 +116,7 @@ JSON_FORMAT = LocalizationFormat(
     display_name="JSON",
     file_extension=".json",
     code_fence="json",
-    locale_suffix_regex=r".*[_.-]([a-z]{2,3}(?:[-_][A-Za-z]{2,4})?)\.json$",
+    locale_suffix_regex=rf".*[_.-]({_BCP47_LOCALE_CODE})\.json$",
 )
 
 _FORMAT_REGISTRY: Dict[str, LocalizationFormat] = {

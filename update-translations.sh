@@ -90,6 +90,11 @@ translation_file_extension_regex() {
         format_id=$(yq -r '(.localization_format.id // .localization_format // "java_properties")' "$CONFIG_FILE" 2>/dev/null || true)
         extension=$(yq -r '(.localization_format.file_extension // "")' "$CONFIG_FILE" 2>/dev/null || true)
     fi
+    extension="${extension#.}"
+    if [ -n "$extension" ] && [ "$extension" != "null" ]; then
+        printf '%s' "$extension" | sed -E 's/[^A-Za-z0-9_]/\\&/g'
+        return
+    fi
     case "$format_id" in
         json)
             printf 'json'
@@ -98,12 +103,7 @@ translation_file_extension_regex() {
             printf 'properties'
             ;;
         *)
-            extension="${extension#.}"
-            if [ -n "$extension" ] && [ "$extension" != "null" ]; then
-                printf '%s' "$extension" | sed -E 's/[^A-Za-z0-9_]/\\&/g'
-            else
-                printf 'properties|json'
-            fi
+            printf 'properties|json'
             ;;
     esac
 }

@@ -7,11 +7,12 @@ from src.translation_validator import check_placeholder_parity
 
 
 def test_extract_placeholder_tokens_supports_common_localization_syntaxes():
-    text = "Hello {0}, {{name}}, %1$d, %(amount).2f, %s, <b>bold</b>"
+    text = "Hello {0}, {0,choice,0#none|1#one}, {{name}}, %1$d, %(amount).2f, %s, <b>bold</b>"
 
     assert extract_placeholder_tokens(text) == Counter(
         {
             "{0}": 1,
+            "{0,choice,0#none|1#one}": 1,
             "{{name}}": 1,
             "%1$d": 1,
             "%(amount).2f": 1,

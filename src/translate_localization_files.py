@@ -1221,6 +1221,16 @@ async def holistic_review_async(
 
         return None  # Fallback after all retries
 
+
+def _escape_output_value(
+        adapter,
+        source_translations: Dict[str, str],
+        key: str,
+        value: str,
+) -> str:
+    return adapter.escape_translation(source_translations.get(key, ""), value)
+
+
 def integrate_translations(
         parsed_lines: List[Dict],
         translations: List[str],
@@ -1244,10 +1254,7 @@ def integrate_translations(
     """
     adapter = get_localization_adapter(localization_format)
     for idx, (translation_idx, key) in enumerate(zip(indices, keys)):
-        translated_text = translations[idx]
-        original_source_text = source_translations.get(key, "")
-
-        translated_text = adapter.escape_translation(original_source_text, translated_text)
+        translated_text = _escape_output_value(adapter, source_translations, key, translations[idx])
 
         if translation_idx < len(parsed_lines):
             # Update existing entry
@@ -1874,7 +1881,12 @@ async def process_translation_queue(
             if line['type'] == 'entry':
                 key = line.get('key')
                 if key in final_corrected_translations:
-                    new_value = final_corrected_translations[key]
+                    new_value = _escape_output_value(
+                        adapter,
+                        source_translations,
+                        key,
+                        final_corrected_translations[key],
+                    )
                     old_value = line['value']
                     if old_value != new_value:
                         review_changes += 1
