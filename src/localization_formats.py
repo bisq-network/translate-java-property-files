@@ -108,8 +108,17 @@ JAVA_PROPERTIES_FORMAT = LocalizationFormat(
     locale_suffix_regex=r".*_([a-z]{2,3}(?:[-_][A-Za-z]{2,4})?)\.properties$",
 )
 
+JSON_FORMAT = LocalizationFormat(
+    id="json",
+    display_name="JSON",
+    file_extension=".json",
+    code_fence="json",
+    locale_suffix_regex=r".*[_.-]([a-z]{2,3}(?:[-_][A-Za-z]{2,4})?)\.json$",
+)
+
 _FORMAT_REGISTRY: Dict[str, LocalizationFormat] = {
     JAVA_PROPERTIES_FORMAT.id: JAVA_PROPERTIES_FORMAT,
+    JSON_FORMAT.id: JSON_FORMAT,
 }
 
 

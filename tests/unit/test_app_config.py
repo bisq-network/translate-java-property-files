@@ -7,6 +7,7 @@ import yaml
 
 from src.app_config import AppConfig, load_app_config, validate_config
 from src.localization_formats import JAVA_PROPERTIES_FORMAT
+from src.localization_layouts import SUFFIX_LAYOUT
 
 
 class TestAppConfig:
@@ -34,6 +35,7 @@ class TestAppConfig:
             brand_glossary=["Bisq"],
             project_context="A desktop trading app.",
             localization_format=JAVA_PROPERTIES_FORMAT,
+            localization_layout=SUFFIX_LAYOUT,
             translation_queue_folder="/tmp/queue",
             translated_queue_folder="/tmp/translated",
             translation_key_ledger_file_path="/tmp/ledger.json",
@@ -48,6 +50,7 @@ class TestAppConfig:
         assert config.language_codes == {"de": "German"}
         assert config.project_context == "A desktop trading app."
         assert config.localization_format == JAVA_PROPERTIES_FORMAT
+        assert config.localization_layout == SUFFIX_LAYOUT
 
 
 class TestLoadAppConfig:
@@ -143,6 +146,7 @@ class TestLoadAppConfig:
         assert config.brand_glossary == []
         assert config.project_context == ""
         assert config.localization_format == JAVA_PROPERTIES_FORMAT
+        assert config.localization_layout == SUFFIX_LAYOUT
         assert config.translation_key_ledger_file_path == os.path.join(
             config.project_root, "logs", "translation_key_ledger.json"
         )
@@ -159,6 +163,10 @@ class TestLoadAppConfig:
                 "code_fence": "json",
                 "locale_suffix_regex": r"_([a-z]{2})\.json$",
             },
+            "localization_layout": {
+                "id": "locale_directory",
+                "source_locale": "en",
+            },
         }
 
         with patch("src.app_config._load_yaml_config", return_value=mock_config):
@@ -172,6 +180,8 @@ class TestLoadAppConfig:
         assert config.brand_glossary == ["Acme", "API"]
         assert config.localization_format.id == "custom_json"
         assert config.localization_format.file_extension == ".json"
+        assert config.localization_layout.id == "locale_directory"
+        assert config.localization_layout.source_locale == "en"
 
     def test_load_config_with_invalid_format_falls_back_to_java_properties(self):
         mock_config = {

@@ -1,6 +1,6 @@
-# Translate Java Property Files
+# Translate Localization Files
 
-AI translation for your Java `.properties` files that runs entirely in **your**
+AI translation for your Java `.properties` or JSON localization files that runs entirely in **your**
 CI, with **your** model — OpenAI, or a local Ollama for **zero data egress** — and
 opens a **reviewable pull request**. No account, no quota, no per-word bill.
 
@@ -17,10 +17,14 @@ result as a PR you review and merge.
 
 ## 🚀 Add AI translation to your project in 5 minutes
 
-**1. Scaffold a config** (auto-detects your locales from existing `*.properties`):
+**1. Scaffold a config** (auto-detects your locales from existing localization files):
 
 ```bash
 ./init.sh --input-folder path/to/your/i18n
+# or, for JSON locale files:
+./init.sh --input-folder path/to/your/i18n --localization-format json
+# or, for JSON files stored as locales/en/*.json and locales/de/*.json:
+./init.sh --input-folder path/to/your/i18n --localization-format json --localization-layout locale_directory
 ```
 
 Commit the generated `config.yaml`.
@@ -102,7 +106,11 @@ summary afterward, so you always know what a run costs on your key.
 * **Git-PR-native** — changes arrive as a reviewable pull request.
 * **Cost transparency** — estimated cost before a run, actual token/cost summary
   after (and in the PR description for the server pipeline).
-* **Two translation sources** — `git` (use the `.properties` already in your repo)
+* **Built-in file formats** — Java `.properties` and JSON locale files.
+* **Built-in file layouts** — suffix files (`messages_de.properties` /
+  `messages.de.json`), locale directories (`locales/de/messages.json`), and
+  locale filenames (`locales/de.json`).
+* **Two translation sources** — `git` (use the localization files already in your repo)
   or `transifex` (pull via the `tx` CLI first).
 
 ---
@@ -111,6 +119,8 @@ summary afterward, so you always know what a run costs on your key.
 
 * **`config.example.yaml`** — a minimal, generic starting point. Copy to
   `config.yaml` and edit (or generate it with `./init.sh`).
+* **`examples/generic-java-properties/`** and **`examples/generic-json/`** —
+  small copyable profiles for the built-in file formats.
 * **`profiles/bisq/`** — a comprehensive real-world profile (the Bisq production
   config and glossary) with per-locale style rules and learned semantic rules.
 * **`glossary.example.json`** — the glossary format (per-language term mappings).
@@ -120,8 +130,9 @@ Key settings:
 
 | Setting | Purpose |
 |---|---|
-| `target_project_root`, `input_folder` | Where your repo and `.properties` live. |
-| `localization_format` | File format metadata. Built-in: `java_properties`; custom mappings can describe future formats. |
+| `target_project_root`, `input_folder` | Where your repo and localization files live. |
+| `localization_format` | Built-in format id: `java_properties` or `json`. |
+| `localization_layout` | File layout id: `suffix`, `locale_directory`, or `locale_filename`. |
 | `project_context` | Product/domain guidance injected into translation prompts. |
 | `translation_source` | `git` (default for new projects) or `transifex`. |
 | `model_provider` | `aisuite` by default; use `openai_compatible` only for the direct OpenAI SDK fallback path. |
@@ -144,7 +155,7 @@ internal implementation files:
 
 * `src.core` — format-agnostic pipeline orchestration contracts.
 * `src.providers` — chat-model provider contracts and provider factories.
-* `src.formats` — localization format metadata and loader helpers.
+* `src.formats` — localization format/layout metadata, runtime adapters, and loader helpers.
 
 ### Adding new languages
 
@@ -213,8 +224,10 @@ journalctl --disk-usage
 * **Validation errors in the PR** — the PR description lists files skipped due to
   validation/linter errors; fix them in the source repo. See
   `docs/llm/debug-docker-service.md`.
-* **No locales detected by `./init.sh`** — your files may not use the
-  `name_<locale>.properties` convention; add `supported_locales` manually.
+* **No locales detected by `./init.sh`** — your files may not use a supported
+  locale filename convention such as `name_<locale>.properties`, `name_<locale>.json`,
+  `name.<locale>.json`, or `locales/<locale>/name.json`; add `supported_locales`
+  manually.
 * **Disk space** — see [Maintenance](#-maintenance) above.
 
 ## Contributing
