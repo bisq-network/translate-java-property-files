@@ -116,24 +116,22 @@ def _build_parser() -> argparse.ArgumentParser:
 
     init_parser = subparsers.add_parser(
         "init",
+        add_help=False,
         help="Scaffold a minimal config by detecting locales in an input folder.",
     )
-    init_parser.add_argument(
-        "init_args",
-        nargs=argparse.REMAINDER,
-        help="Arguments forwarded to the existing init helper.",
-    )
-    init_parser.set_defaults(func=_cmd_init)
+    init_parser.set_defaults(func=_cmd_init, init_args=())
 
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
-    if raw_argv and raw_argv[0] == "init":
-        return init_config_main(raw_argv[1:])
     parser = _build_parser()
-    args = parser.parse_args(raw_argv)
+    args, forwarded_args = parser.parse_known_args(raw_argv)
+    if args.command == "init":
+        args.init_args = forwarded_args
+    elif forwarded_args:
+        parser.error(f"unrecognized arguments: {' '.join(forwarded_args)}")
     return int(args.func(args))
 
 
