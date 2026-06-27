@@ -27,6 +27,7 @@ from localize.model_provider import (
     ModelProviderConfigurationError,
     create_model_provider,
     normalize_model_provider_name,
+    requires_openai_credentials,
 )
 from localize.semantic_quality import normalize_retained_source_word_allowlist
 
@@ -122,6 +123,8 @@ def validate_config(
     *,
     path_exists=os.path.exists,
     effective_api_base_url: Optional[str] = None,
+    api_key_available: Optional[bool] = None,
+    dry_run_override: Optional[bool] = None,
 ) -> List[ConfigIssue]:
     """Validate a raw config dict and return actionable issues.
 
@@ -198,6 +201,35 @@ def validate_config(
             "warning",
             f"api_base_url '{base_url}' should start with http:// or https:// "
             "(e.g. http://localhost:11434/v1 for a local Ollama server)."
+        ))
+
+    dry_run = dry_run_override if dry_run_override is not None else _as_bool(config.get("dry_run", False), False)
+    model_name = str(config.get("model_name") or "gpt-4")
+    review_model_name = str(config.get("review_model_name") or model_name)
+    model_provider_name = normalize_model_provider_name(
+        str(config.get("model_provider", DEFAULT_MODEL_PROVIDER) or DEFAULT_MODEL_PROVIDER)
+    )
+    aisuite_config = config.get("aisuite", {}) or {}
+    aisuite_provider_configs = (
+        aisuite_config.get("provider_configs", {}) if isinstance(aisuite_config, dict) else {}
+    ) or {}
+    try:
+        needs_openai_credentials = requires_openai_credentials(
+            provider_name=model_provider_name,
+            model_names=(model_name, review_model_name),
+            api_base_url=base_url,
+            aisuite_provider_configs=aisuite_provider_configs,
+        )
+    except ModelProviderConfigurationError as exc:
+        issues.append(ConfigIssue("error", str(exc)))
+        needs_openai_credentials = False
+
+    if api_key_available is False and not dry_run and needs_openai_credentials:
+        issues.append(ConfigIssue(
+            "error",
+            "OPENAI_API_KEY is required for this OpenAI-backed run. Set OPENAI_API_KEY, "
+            "configure api_base_url for a custom endpoint, enable dry_run, or route all "
+            "AISuite models to a configured non-OpenAI provider."
         ))
 
     return issues
@@ -349,6 +381,14 @@ def _as_bool(value: Any, default: bool) -> bool:
     return default
 
 
+def _resolve_dry_run(config: Dict[str, Any]) -> bool:
+    """Resolve dry-run mode, allowing the CLI/Action to force it on."""
+    env_value = os.environ.get('LOCALIZE_DRY_RUN')
+    if env_value is not None and _as_bool(env_value, default=False):
+        return True
+    return _as_bool(config.get('dry_run', False), default=False)
+
+
 def _resolve_api_base_url(config: Dict[str, Any]) -> Optional[str]:
     """Resolve the OpenAI-compatible endpoint, env (OPENAI_BASE_URL) over config.
 
@@ -430,8 +470,19 @@ def load_app_config() -> AppConfig:
     # client and validation both see the same value.
     api_base_url = _resolve_api_base_url(config)
 
+    # Get configuration values with defaults that validation and runtime share.
+    dry_run = _resolve_dry_run(config)
+
     # Validate the configuration and surface actionable problems (non-fatal).
-    _log_config_issues(validate_config(config, effective_api_base_url=api_base_url), logger)
+    _log_config_issues(
+        validate_config(
+            config,
+            effective_api_base_url=api_base_url,
+            api_key_available=bool(os.environ.get('OPENAI_API_KEY')),
+            dry_run_override=dry_run,
+        ),
+        logger,
+    )
 
     # Build language mappings
     locales_list = config.get('supported_locales', [])
@@ -442,7 +493,6 @@ def load_app_config() -> AppConfig:
     precomputed_style_rules_text = _precompute_style_rules(style_rules, language_codes)
 
     # Get configuration values with defaults
-    dry_run = config.get('dry_run', False)
     # PROCESS_ALL_FILES env var overrides config (the GitHub Action sets it so a
     # clean CI checkout, which has no working-tree changes, still finds work).
     process_all_files = _as_bool(

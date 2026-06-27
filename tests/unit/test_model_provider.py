@@ -14,6 +14,7 @@ from localize.model_provider import (
     create_aisuite_provider,
     create_openai_compatible_provider,
     normalize_model_provider_name,
+    requires_openai_credentials,
 )
 from localize.usage_tracker import UsageTracker
 
@@ -352,6 +353,33 @@ def test_aisuite_factory_requires_openai_credentials_for_default_models():
             aisuite_provider_configs={},
             model_names=("gpt-4o-mini", "gpt-4o"),
         )
+
+
+def test_openai_credential_requirement_matches_aisuite_model_routes():
+    assert requires_openai_credentials(
+        provider_name="aisuite",
+        model_names=("gpt-4o-mini", "gpt-4o"),
+        api_base_url=None,
+        aisuite_provider_configs={},
+    )
+    assert not requires_openai_credentials(
+        provider_name="aisuite",
+        model_names=("anthropic:claude-3-5-sonnet-latest",),
+        api_base_url=None,
+        aisuite_provider_configs={"anthropic": {"api_key": "secret"}},
+    )
+    assert not requires_openai_credentials(
+        provider_name="aisuite",
+        model_names=("gpt-4o-mini",),
+        api_base_url="http://localhost:11434/v1",
+        aisuite_provider_configs={},
+    )
+    assert requires_openai_credentials(
+        provider_name="openai_compatible",
+        model_names=("any-model",),
+        api_base_url=None,
+        aisuite_provider_configs={},
+    )
 
 
 def test_aisuite_factory_allows_non_openai_models_without_openai_key():
