@@ -258,41 +258,6 @@ def _set_json_path(
     _assign_json_child(current, path[-1], value)
 
 
-def _delete_json_path(root: Dict, path: Sequence[str]) -> None:
-    current = root
-    parents: List[Tuple[JsonContainer, str]] = []
-    for segment in path[:-1]:
-        child = _get_json_child(current, segment)
-        if not isinstance(child, (dict, list)):
-            return
-        parents.append((current, segment))
-        current = child
-    if isinstance(current, dict):
-        current.pop(path[-1], None)
-    elif isinstance(current, list):
-        index = _json_list_index(path[-1])
-        if index is not None and index < len(current):
-            current.pop(index)
-
-    for parent, segment in reversed(parents):
-        child = _get_json_child(parent, segment)
-        if not isinstance(child, (dict, list)) or child:
-            continue
-        if isinstance(parent, dict):
-            parent.pop(segment, None)
-        elif isinstance(parent, list):
-            index = _json_list_index(segment)
-            if index is not None and index < len(parent):
-                parent.pop(index)
-
-
-def _json_delete_sort_key(path: Sequence[str]) -> Tuple[int, Tuple[Tuple[int, object], ...]]:
-    return (
-        -len(path),
-        tuple((0, -int(segment)) if segment.isdigit() else (1, segment) for segment in path),
-    )
-
-
 def _json_document_from_parsed_lines(parsed_lines: ParsedLines) -> Dict:
     for line in parsed_lines:
         if line.get("type") == "document":
@@ -301,6 +266,30 @@ def _json_document_from_parsed_lines(parsed_lines: ParsedLines) -> Dict:
                 return copy.deepcopy(content)
             raise ValueError("JSON parsed document metadata is invalid.")
     raise ValueError("JSON parsed document metadata is missing.")
+
+
+def _synchronize_json_node(source_node: object, target_node: object) -> JsonNode:
+    """Return a target JSON node ordered/shaped like source with translations kept."""
+    if isinstance(source_node, dict):
+        result: Dict[str, JsonNode] = {}
+        target_dict = target_node if isinstance(target_node, dict) else {}
+        for key, source_child in source_node.items():
+            target_child = target_dict.get(key)
+            result[key] = _synchronize_json_node(source_child, target_child)
+        return result
+
+    if isinstance(source_node, list):
+        result_list: List[JsonNode] = []
+        target_list = target_node if isinstance(target_node, list) else []
+        for index, source_child in enumerate(source_node):
+            target_child = target_list[index] if index < len(target_list) else None
+            result_list.append(_synchronize_json_node(source_child, target_child))
+        return result_list
+
+    if isinstance(source_node, str):
+        return target_node if isinstance(target_node, str) else source_node
+
+    return copy.deepcopy(source_node)
 
 
 def reassemble_json_file(parsed_lines: ParsedLines) -> str:
@@ -325,28 +314,9 @@ def synchronize_json_keys(target_file_path: str, source_file_path: str) -> Tuple
     if not missing_keys and not extra_keys:
         return missing_keys, extra_keys
 
-    source_paths = {
-        line["key"]: tuple(line["json_path"])
-        for line in source_parsed_lines
-        if line.get("type") == "entry"
-    }
-    target_paths = {
-        line["key"]: tuple(line["json_path"])
-        for line in target_parsed_lines
-        if line.get("type") == "entry"
-    }
     source_payload = _json_document_from_parsed_lines(source_parsed_lines)
     target_payload = _json_document_from_parsed_lines(target_parsed_lines)
-
-    for key in sorted(extra_keys, key=lambda key: _json_delete_sort_key(target_paths[key])):
-        _delete_json_path(target_payload, target_paths[key])
-
-    for line in source_parsed_lines:
-        if line.get("type") != "entry":
-            continue
-        key = line["key"]
-        if key in missing_keys:
-            _set_json_path(target_payload, source_paths[key], source_translations[key], source_payload)
+    target_payload = _synchronize_json_node(source_payload, target_payload)
 
     with open(target_file_path, "w", encoding="utf-8") as file:
         file.write(json.dumps(target_payload, ensure_ascii=False, indent=2) + "\n")
