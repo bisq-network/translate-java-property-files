@@ -9,6 +9,10 @@ from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 from src.localization_formats import JSON_FORMAT, JAVA_PROPERTIES_FORMAT, LocalizationFormat
+from src.localization_formats import (
+    register_localization_format,
+    unregister_localization_format,
+)
 from src.properties_parser import parse_properties_file, reassemble_file as reassemble_properties_file
 from src.translation_validator import (
     check_encoding_and_mojibake,
@@ -405,12 +409,48 @@ JSON_ADAPTER = LocalizationFileAdapter(
 )
 
 
+_ADAPTER_REGISTRY: Dict[str, LocalizationFileAdapter] = {
+    JAVA_PROPERTIES_ADAPTER.localization_format.id: JAVA_PROPERTIES_ADAPTER,
+    JSON_ADAPTER.localization_format.id: JSON_ADAPTER,
+}
+_BUILTIN_ADAPTER_IDS = frozenset(_ADAPTER_REGISTRY)
+
+
+def list_localization_adapters() -> Dict[str, LocalizationFileAdapter]:
+    """Return registered runtime adapters keyed by localization format id."""
+    return dict(_ADAPTER_REGISTRY)
+
+
+def register_localization_adapter(
+    adapter: LocalizationFileAdapter,
+    *,
+    replace: bool = False,
+) -> None:
+    """Register a parser/serializer adapter and its format metadata."""
+    format_id = adapter.localization_format.id
+    existing = _ADAPTER_REGISTRY.get(format_id)
+    if existing is not None and not replace:
+        raise ValueError(f"Localization adapter '{format_id}' is already registered.")
+    if format_id in _BUILTIN_ADAPTER_IDS and existing is not adapter:
+        raise ValueError(f"Cannot replace built-in localization adapter '{format_id}'.")
+
+    register_localization_format(adapter.localization_format, replace=replace)
+    _ADAPTER_REGISTRY[format_id] = adapter
+
+
+def unregister_localization_adapter(format_id: str) -> None:
+    """Remove a non-built-in runtime adapter and matching format metadata."""
+    if format_id in _BUILTIN_ADAPTER_IDS:
+        raise ValueError(f"Cannot unregister built-in localization adapter '{format_id}'.")
+    _ADAPTER_REGISTRY.pop(format_id, None)
+    unregister_localization_format(format_id)
+
+
 def get_localization_adapter(localization_format: LocalizationFormat) -> LocalizationFileAdapter:
     """Return the runtime adapter for ``localization_format``."""
-    if localization_format.id == JAVA_PROPERTIES_FORMAT.id:
-        return JAVA_PROPERTIES_ADAPTER
-    if localization_format.id == JSON_FORMAT.id:
-        return JSON_ADAPTER
+    adapter = _ADAPTER_REGISTRY.get(localization_format.id)
+    if adapter is not None:
+        return adapter
     raise NotImplementedError(
         "No parser/serializer adapter is registered for localization_format="
         f"{localization_format.id}."

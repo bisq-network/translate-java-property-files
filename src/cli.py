@@ -1,0 +1,139 @@
+"""Command line interface for the reusable localization pipeline."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import importlib
+import os
+import sys
+from pathlib import Path
+from typing import Any, Sequence
+
+import yaml
+
+from src.app_config import ConfigIssue, validate_config
+from src.formats import list_localization_adapters, list_localization_formats
+from src.init_config import main as init_config_main
+
+
+def _load_config_file(config_path: Path) -> dict[str, Any]:
+    with config_path.open("r", encoding="utf-8") as file:
+        payload = yaml.safe_load(file)
+    if payload is None:
+        return {}
+    if not isinstance(payload, dict):
+        raise ValueError("Configuration file must contain a YAML mapping.")
+    return payload
+
+
+def _effective_api_base_url(config: dict[str, Any]) -> str | None:
+    for candidate in (os.environ.get("OPENAI_BASE_URL"), config.get("api_base_url")):
+        if candidate is not None:
+            stripped = str(candidate).strip()
+            if stripped:
+                return stripped
+    return None
+
+
+def _print_config_issues(issues: Sequence[ConfigIssue]) -> None:
+    for issue in issues:
+        print(f"{issue.level}: {issue.message}", file=sys.stderr)
+
+
+def _cmd_formats(_args: argparse.Namespace) -> int:
+    adapters = list_localization_adapters()
+    for format_id, localization_format in sorted(list_localization_formats().items()):
+        adapter_status = "adapter=yes" if format_id in adapters else "adapter=no"
+        print(
+            f"{format_id}\t{localization_format.file_extension}\t"
+            f"{localization_format.display_name}\t{adapter_status}"
+        )
+    return 0
+
+
+def _cmd_validate(args: argparse.Namespace) -> int:
+    config_path = Path(args.config).expanduser().resolve()
+    if not config_path.exists():
+        print(f"error: configuration file not found: {config_path}", file=sys.stderr)
+        return 1
+    try:
+        config = _load_config_file(config_path)
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        print(f"error: could not read configuration: {exc}", file=sys.stderr)
+        return 1
+
+    issues = validate_config(
+        config,
+        effective_api_base_url=_effective_api_base_url(config),
+    )
+    _print_config_issues(issues)
+    has_errors = any(issue.level == "error" for issue in issues)
+    if has_errors:
+        return 1
+    print("Configuration OK")
+    return 0
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    config_path = Path(args.config).expanduser().resolve()
+    os.environ["TRANSLATOR_CONFIG_FILE"] = str(config_path)
+    runtime = importlib.import_module("src.translate_localization_files")
+    asyncio.run(runtime.main())
+    return 0
+
+
+def _cmd_init(args: argparse.Namespace) -> int:
+    return init_config_main(list(args.init_args))
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="localize",
+        description="Validate and run the AI localization translation pipeline.",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    formats_parser = subparsers.add_parser(
+        "formats",
+        help="List registered localization formats and runtime adapters.",
+    )
+    formats_parser.set_defaults(func=_cmd_formats)
+
+    validate_parser = subparsers.add_parser(
+        "validate",
+        help="Validate a localization pipeline config without running translation.",
+    )
+    validate_parser.add_argument("--config", default="config.yaml", help="Path to config.yaml.")
+    validate_parser.set_defaults(func=_cmd_validate)
+
+    run_parser = subparsers.add_parser(
+        "run",
+        help="Run the configured translation pipeline.",
+    )
+    run_parser.add_argument("--config", default="config.yaml", help="Path to config.yaml.")
+    run_parser.set_defaults(func=_cmd_run)
+
+    init_parser = subparsers.add_parser(
+        "init",
+        add_help=False,
+        help="Scaffold a minimal config by detecting locales in an input folder.",
+    )
+    init_parser.set_defaults(func=_cmd_init, init_args=())
+
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    parser = _build_parser()
+    args, forwarded_args = parser.parse_known_args(raw_argv)
+    if args.command == "init":
+        args.init_args = forwarded_args
+    elif forwarded_args:
+        parser.error(f"unrecognized arguments: {' '.join(forwarded_args)}")
+    return int(args.func(args))
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

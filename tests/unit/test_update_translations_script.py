@@ -81,7 +81,7 @@ def test_validation_summary_is_reset_before_translation_script_runs():
     script = (REPO_ROOT / "update-translations.sh").read_text()
 
     reset_index = script.index("translation_validation_summary.json")
-    python_index = script.index("python3 -u -m src.translate_localization_files")
+    python_index = script.index('python3 -u -m src.cli run --config "$CONFIG_FILE"')
 
     assert reset_index < python_index
     assert '{"files":{},"pipeline_warnings":[]}' in script
@@ -134,7 +134,7 @@ def test_source_adapter_is_prepared_before_python_pipeline_runs():
     script = (REPO_ROOT / "update-translations.sh").read_text()
 
     prepare_index = script.index('prepare_translation_source "$TRANSLATION_SOURCE"')
-    python_index = script.index("python3 -u -m src.translate_localization_files")
+    python_index = script.index('python3 -u -m src.cli run --config "$CONFIG_FILE"')
 
     assert prepare_index < python_index
 

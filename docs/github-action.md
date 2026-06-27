@@ -81,6 +81,12 @@ Completion-token caps are normalized internally. Newer OpenAI models that
 require `max_completion_tokens` and compatible endpoints that only accept
 `max_tokens` can use the same action inputs.
 
+Internally the action runs the same reusable CLI that local installs use:
+
+```bash
+python -m src.cli run --config "$TRANSLATOR_CONFIG_FILE"
+```
+
 ## Inputs
 
 | Input | Default | Purpose |

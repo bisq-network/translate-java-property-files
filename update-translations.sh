@@ -7,7 +7,7 @@
 # It performs the following steps:
 # 1. Sets up the environment, including SSH and Git configurations.
 # 2. Clones or updates the target repository where translation files are stored.
-# 3. Executes the Python translation script (`translate_localization_files.py`).
+# 3. Executes the localization CLI (`localize run` / `python -m src.cli run`).
 # 4. Commits any changes to the translation files.
 # 5. Creates a pull request on GitHub with the new translations.
 #
@@ -465,8 +465,8 @@ git log -1 --pretty=%H
 # Step 2: Use the configured source adapter to prepare translation files.
 prepare_translation_source "$TRANSLATION_SOURCE" "${DRY_RUN:-false}" "${PULL_SOURCE_FILES:-false}"
 
-# Navigate back to the application's root directory to run the python script.
-# This ensures that the module path `src.translate_localization_files` is resolved correctly.
+# Navigate back to the application's root directory to run the Python CLI.
+# This ensures that the module path `src.cli` is resolved correctly.
 APP_ROOT="/app"
 if [ ! -d "$APP_ROOT" ]; then
   APP_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -478,8 +478,8 @@ else
   log "Warning: application root not found; staying in $(pwd) to run Python."
 fi
 
-# Step 3: Run the translation script
-log "Running translation script"
+# Step 3: Run the localization CLI
+log "Running localization CLI"
 # If a filter glob is defined in the config, and it is not the literal string "null",
 # export it as an environment variable for the Python script to use.
 if [ -n "$TRANSLATION_FILTER_GLOB" ] && [ "$TRANSLATION_FILTER_GLOB" != "null" ]; then
@@ -491,11 +491,11 @@ mkdir -p "$APP_ROOT/logs"
 VALIDATION_SUMMARY="$APP_ROOT/logs/translation_validation_summary.json"
 printf '%s\n' '{"files":{},"pipeline_warnings":[]}' > "$VALIDATION_SUMMARY"
 set +e
-python3 -u -m src.translate_localization_files
+python3 -u -m src.cli run --config "$CONFIG_FILE"
 PY_EXIT=$?
 set -e
 if [ $PY_EXIT -ne 0 ]; then
-  log "Error: Translation script exited with code $PY_EXIT"
+  log "Error: Localization CLI exited with code $PY_EXIT"
   exit $PY_EXIT
 fi
 

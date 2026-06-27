@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "translate-java-property-files"
+version = "0.1.0"
+description = "Reusable AI localization translation pipeline"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = [
+  "aiolimiter",
+  "aisuite==0.1.14",
+  "GitPython",
+  "httpx",
+  "jsonschema",
+  "openai",
+  "python-dotenv",
+  "python-slugify",
+  "PyYAML",
+  "requests",
+  "tiktoken",
+  "tqdm",
+]
+
+[project.scripts]
+localize = "src.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["src*"]

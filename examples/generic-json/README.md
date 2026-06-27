@@ -12,3 +12,12 @@ Files in this example:
 The JSON adapter translates string leaves only. Nested string leaves are tracked
 internally with JSON Pointer keys, so object keys containing dots remain
 unambiguous.
+
+Try it from the repository root:
+
+```bash
+python3 -m venv venv
+./venv/bin/pip install -e .
+localize validate --config examples/generic-json/config.yaml
+localize formats
+```

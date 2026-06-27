@@ -29,6 +29,16 @@ result as a PR you review and merge.
 
 Commit the generated `config.yaml`.
 
+You can also use the reusable CLI directly:
+
+```bash
+python3 -m venv venv
+./venv/bin/pip install -e .
+localize init --input-folder path/to/your/i18n
+localize validate --config config.yaml
+localize run --config config.yaml
+```
+
 **2. Add a GitHub workflow** — `.github/workflows/translate.yml`:
 
 ```yaml
@@ -82,8 +92,10 @@ require `max_completion_tokens` and compatible endpoints that only accept
 ```bash
 python3 -m venv venv                         # first time only
 ./venv/bin/pip install pip-tools && ./venv/bin/pip-sync requirements-dev.txt
+./venv/bin/pip install -e .
 export OPENAI_API_KEY=sk-...                  # or use a local api_base_url
-./run-local-translation.sh config.yaml
+localize validate --config config.yaml
+localize run --config config.yaml
 ```
 
 The pipeline prints a **per-run cost estimate** before spending and a token/cost
@@ -112,6 +124,8 @@ summary afterward, so you always know what a run costs on your key.
   locale filenames (`locales/de.json`).
 * **Two translation sources** — `git` (use the localization files already in your repo)
   or `transifex` (pull via the `tx` CLI first).
+* **Reusable CLI** — `localize init`, `localize validate`, `localize formats`, and
+  `localize run` are the stable command surface for non-Bisq projects.
 
 ---
 
@@ -155,7 +169,10 @@ internal implementation files:
 
 * `src.core` — format-agnostic pipeline orchestration contracts.
 * `src.providers` — chat-model provider contracts and provider factories.
-* `src.formats` — localization format/layout metadata, runtime adapters, and loader helpers.
+* `src.formats` — localization format/layout metadata, runtime adapters, adapter
+  registration, and conformance-test helpers.
+
+CLI details: **[Localization CLI guide](./docs/localization-cli.md)**.
 
 ### Adding new languages
 

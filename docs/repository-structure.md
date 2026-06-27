@@ -40,7 +40,9 @@ This document outlines the structure and purpose of the files and directories wi
   - **`src/model_provider.py`**: Provider abstraction for chat completions, token counting, usage tracking, pricing estimates, AISuite dispatch, and the direct OpenAI-compatible fallback.
   - **`src/localization_adapters.py`**: Runtime parser/serializer/validator adapters for supported localization formats.
   - **`src/localization_layouts.py`**: Source/target path layout helpers for suffix files, locale directories, and locale filenames.
-  - **`src/translate_localization_files.py`**: Translation runtime. It loads config, selects the localization adapter, manages the two-step translation/review process, and invokes `pipeline_core`.
+- **`src/cli.py`**: Reusable `localize` command entry point for init, validate,
+  format discovery, and running the configured pipeline.
+- **`src/translate_localization_files.py`**: Translation runtime. It loads config, selects the localization adapter, manages the two-step translation/review process, and invokes `pipeline_core`.
 - **`tests/`**: Contains test files for the project.
 - **`update-translations.sh`**: The main orchestration script, run by the container. It pulls from Transifex, runs the Python script, and manages the Git workflow (branching, committing, creating a PR).
 - **`venv/`**: (Optional, gitignored) Contains Python virtual environment files for local development.
@@ -61,6 +63,9 @@ This document outlines the structure and purpose of the files and directories wi
 - **`src/localization_layouts.py`**: Layout implementations that map target locale paths back to source locale paths without coupling the runtime to one filename convention.
 
 - **`src/translate_localization_files.py`**: The translation runtime. It loads configuration, selects the configured localization adapter, manages the two-step translation and review process through the configured model provider, and passes orchestration callables into `pipeline_core`.
+- **`src/connectors.py`**: Public source/processor/reporter/publisher connector
+  contracts for projects that want to compose the core pipeline without using
+  the default shell publisher.
 
 - **`update-translations.sh`**: The main container orchestration script. It prepares the configured translation source (`git` or `transifex`), runs the Python pipeline, and uses a publisher helper for the Git workflow (branching, committing, creating a PR).
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import logging
+from dataclasses import dataclass
 from collections.abc import Mapping
 from typing import Any, Dict, Optional, Protocol, Sequence
 
@@ -33,6 +34,15 @@ _MODEL_PROVIDER_ALIASES = {
     "openai": "openai_compatible",
     "openai_compatible": "openai_compatible",
 }
+
+
+@dataclass(frozen=True)
+class ModelProviderCapabilities:
+    """Request features supported by a provider/model route."""
+
+    provider_key: str
+    supports_response_format: bool
+    supports_completion_token_limit: bool = True
 
 
 class ModelProviderConfigurationError(RuntimeError):
@@ -84,6 +94,9 @@ class ChatModelProvider(Protocol):
     def is_retryable_error(self, exc: Exception) -> bool:
         """Return true when the provider error should follow retry backoff."""
 
+    def capabilities_for_model(self, model: str) -> ModelProviderCapabilities:
+        """Return request capabilities for a configured model route."""
+
 
 def normalize_model_provider_name(provider_name: str) -> str:
     """Return the canonical provider name for config aliases."""
@@ -131,14 +144,23 @@ def _aisuite_provider_config(
 
 
 def _sanitize_aisuite_request_kwargs(model: str, kwargs: Dict[str, Any], default_provider: str) -> Dict[str, Any]:
-    provider_key = _aisuite_provider_key_for_model(model, default_provider)
-    if provider_key == "openai":
+    capabilities = _aisuite_capabilities_for_model(model, default_provider)
+    if capabilities.supports_response_format:
         return dict(kwargs)
     return {
         key: value
         for key, value in kwargs.items()
         if key not in _AISUITE_OPENAI_ONLY_REQUEST_KWARGS
     }
+
+
+def _aisuite_capabilities_for_model(model: str, default_provider: str) -> ModelProviderCapabilities:
+    provider_key = _aisuite_provider_key_for_model(model, default_provider)
+    return ModelProviderCapabilities(
+        provider_key=provider_key,
+        supports_response_format=provider_key == "openai",
+        supports_completion_token_limit=True,
+    )
 
 
 class OpenAICompatibleProvider:
@@ -235,6 +257,13 @@ class OpenAICompatibleProvider:
             return getattr(exc, "status_code", 0) >= 500
         return False
 
+    def capabilities_for_model(self, model: str) -> ModelProviderCapabilities:
+        return ModelProviderCapabilities(
+            provider_key="openai_compatible",
+            supports_response_format=True,
+            supports_completion_token_limit=True,
+        )
+
 
 class AiSuiteProvider(OpenAICompatibleProvider):
     """AISuite-backed provider using the same async boundary as the pipeline.
@@ -301,6 +330,9 @@ class AiSuiteProvider(OpenAICompatibleProvider):
         exc_module = exc.__class__.__module__
         exc_name = exc.__class__.__name__
         return exc_module.startswith("aisuite") or exc_name == "LLMError"
+
+    def capabilities_for_model(self, model: str) -> ModelProviderCapabilities:
+        return _aisuite_capabilities_for_model(self._provider_model_name(model), self.default_provider)
 
 
 def create_openai_compatible_provider(

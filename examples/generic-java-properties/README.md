@@ -12,3 +12,12 @@ It demonstrates the reusable contract without project-specific terminology:
 
 To adapt it, copy the directory into a test project, update `target_project_root`
 and `input_folder`, then run the pipeline with that config.
+
+Try it from the repository root:
+
+```bash
+python3 -m venv venv
+./venv/bin/pip install -e .
+localize validate --config examples/generic-java-properties/config.yaml
+localize formats
+```

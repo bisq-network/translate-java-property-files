@@ -86,6 +86,5 @@ fi
 
 # --- Script Execution ---
 echo "[info] Starting translation process..."
-exec "$VENV_PYTHON" -m src.translate_localization_files
-
+exec "$VENV_PYTHON" -m src.cli run --config "$CONFIG_FILE_PATH"
 
