@@ -14,6 +14,7 @@ import localize.translate_localization_files
 from localize.localization_formats import JSON_FORMAT, JAVA_PROPERTIES_FORMAT
 from localize.localization_layouts import LocalizationLayout
 from localize.localization_profiles import LocalizationProfile
+from localize.translation_memory import TranslationMemory, save_translation_memory
 
 # All fixtures are now defined in conftest.py and are auto-discovered by pytest.
 
@@ -120,6 +121,53 @@ async def test_process_translation_queue_end_to_end(integration_test_environment
         assert "key.two=Wert zwei" in final_content
         assert "key.one=Wert eins" in final_content
         assert len(final_content.strip().split('\n')) == 2
+
+
+@pytest.mark.asyncio
+async def test_process_translation_queue_reuses_translation_memory_without_model_calls(integration_test_environment):
+    env = integration_test_environment
+    source_file_path = os.path.join(env['input_folder'], 'app.properties')
+    target_file_path = os.path.join(env['translation_queue_folder'], 'app_de.properties')
+    memory_path = os.path.join(env['input_folder'], 'translation_memory.json')
+
+    with open(source_file_path, 'w', encoding='utf-8') as f:
+        f.write("key.one=value one\nkey.two=value two\n")
+    with open(target_file_path, 'w', encoding='utf-8') as f:
+        f.write("key.one=Wert eins\n")
+
+    memory = TranslationMemory()
+    memory.record("value two", "Wert zwei", locale="de", format_id="java_properties")
+    save_translation_memory(memory_path, memory)
+
+    provider = MagicMock()
+    provider.create_chat_completion = AsyncMock()
+    provider.estimate_run_cost.return_value = MagicMock()
+    provider.format_estimate.return_value = "estimate"
+    provider.is_retryable_error.return_value = False
+
+    with patch('localize.translate_localization_files.MODEL_PROVIDER', provider), \
+         patch('localize.translate_localization_files.TRANSLATION_MEMORY_ENABLED', True), \
+         patch('localize.translate_localization_files.TRANSLATION_MEMORY_FILE_PATH', memory_path), \
+         patch('localize.translate_localization_files.TRANSLATION_KEY_LEDGER_FILE_PATH',
+               os.path.join(env['input_folder'], 'ledger.json')), \
+         patch('localize.translate_localization_files.get_working_tree_changed_keys', return_value=set()), \
+         patch('localize.translate_localization_files.holistic_review_async', new_callable=AsyncMock) as review:
+        await localize.translate_localization_files.process_translation_queue(
+            translation_queue_folder=env['translation_queue_folder'],
+            translated_queue_folder=env['translated_queue_folder'],
+            glossary_file_path=env['mock_glossary_path_resolved']
+        )
+
+    output_file_path = os.path.join(env['translated_queue_folder'], 'app_de.properties')
+    assert os.path.exists(output_file_path)
+    with open(output_file_path, 'r', encoding='utf-8') as f:
+        final_content = f.read()
+
+    assert "key.one=Wert eins" in final_content
+    assert "key.two=Wert zwei" in final_content
+    provider.create_chat_completion.assert_not_called()
+    review.assert_not_awaited()
+
 
 @pytest.mark.asyncio
 async def test_handles_already_escaped_quotes_correctly(integration_test_environment):

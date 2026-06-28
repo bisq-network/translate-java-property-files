@@ -4,7 +4,7 @@
 # per-locale style rules, learned semantic quality rules, and a large glossary,
 # see profiles/bisq/config.yaml (the Bisq production profile).
 #
-# Tip: run `./init.sh --input-folder path/to/i18n` to scaffold this automatically
+# Tip: run `localize init --input-folder path/to/i18n` to scaffold this automatically
 # by detecting the locales from your existing localization files.
 
 # --- Paths (required) ---
@@ -84,6 +84,10 @@ brand_technical_glossary:
 
 # If true, the script logs actions without calling the API or writing files.
 dry_run: false
+
+# Reuse exact approved translations across runs before calling the model.
+translation_memory_enabled: true
+translation_memory_file_path: "logs/translation_memory.json"
 
 # --- Target locales ---
 # One entry per language you translate into (the source language is excluded).

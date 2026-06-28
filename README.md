@@ -47,14 +47,14 @@ localize init --input-folder path/to/i18n
 For JSON:
 
 ```bash
-./init.sh --input-folder path/to/i18n --localization-format json
+localize init --input-folder path/to/i18n --localization-format json
 ```
 
 For JSON stored as `locales/en/messages.json` and
 `locales/de/messages.json`:
 
 ```bash
-./init.sh \
+localize init \
   --input-folder locales \
   --localization-format json \
   --localization-layout locale_directory
@@ -63,7 +63,7 @@ For JSON stored as `locales/en/messages.json` and
 For a mixed project:
 
 ```bash
-./init.sh \
+localize init \
   --input-folder path/to/i18n \
   --localization-profile java_properties:suffix \
   --localization-profile json:locale_directory
@@ -102,7 +102,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: bisq-network/translate-java-property-files@main
+      - uses: bisq-network/translate-java-property-files@v0.1.0
         with:
           config-file: config.yaml
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -177,6 +177,7 @@ localize check --config config.yaml
 localize validate --config config.yaml
 localize run --dry-run --config config.yaml
 localize run --config config.yaml
+localize bootstrap-pr --target-project-root path/to/repo --action-ref v0.1.0
 ```
 
 Custom adapter modules can be loaded before any command:
@@ -189,6 +190,23 @@ Installed packages can also expose the `localize.format_adapters` entry point
 group, or users can set `LOCALIZE_PLUGIN_MODULES=module_a,module_b`.
 
 Full guide: [docs/localization-cli.md](docs/localization-cli.md).
+
+## Bootstrap A Project PR
+
+To onboard another repository without hand-copying files, run:
+
+```bash
+localize bootstrap-pr --target-project-root path/to/repo --action-ref v0.1.0
+```
+
+The command refuses dirty worktrees, creates a `localize/onboarding` branch, and
+commits:
+
+- `config.yaml` generated from detected localization files
+- `glossary.json` copied from the generic example
+- `.github/workflows/translate.yml` in safe `dry-run: true` mode
+
+Add `--push --open-pr` when the target repo has `origin` and `gh` configured.
 
 ## Public Python API
 
@@ -203,6 +221,35 @@ Use these packages for reusable code:
 
 Avoid importing implementation modules directly unless you are contributing to
 this repository.
+
+## Translation Memory
+
+The runtime maintains an exact-match translation memory at
+`logs/translation_memory.json` by default. Successful, validation-safe
+translations are recorded by normalized source text, target locale, and format.
+Future runs reuse matching entries before calling the model. If the same source
+segment later receives competing approved targets for the same locale and
+format, the entry is marked as a conflict and no longer reused.
+
+Config knobs:
+
+```yaml
+translation_memory_enabled: true
+translation_memory_file_path: "logs/translation_memory.json"
+```
+
+Use a shared path if several projects should reuse one approved memory store.
+
+## Releases
+
+Pin a tagged release for production workflows once tags are available:
+
+```yaml
+- uses: bisq-network/translate-java-property-files@v0.1.0
+```
+
+Use `@main` only when you intentionally want the latest unreleased changes.
+Release notes live in [CHANGELOG.md](CHANGELOG.md).
 
 ## Docker Server Deployment
 

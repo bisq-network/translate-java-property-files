@@ -87,6 +87,11 @@ localization_formats:
 The included `profiles/bisq/` directory is a full production example with style
 rules, semantic QA rules, and a project glossary.
 
+Translation memory is enabled by default and stored under
+`logs/translation_memory.json`. Keep that default for isolated deployments, or
+set `translation_memory_file_path` to a shared persistent path when multiple
+profiles should reuse approved translations.
+
 ## 3. Configure Secrets
 
 Create `docker/.env` from the example:

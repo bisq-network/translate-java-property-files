@@ -17,12 +17,14 @@ def integration_test_paths():
     translation_queue_dir = os.path.join(tests_root, 'temp_integration_translation_queue')
     translated_queue_dir = os.path.join(tests_root, 'temp_integration_translated_queue')
     mock_glossary_path = os.path.join(tests_root, 'temp_mock_glossary.json')
+    translation_memory_path = os.path.join(tests_root, 'temp_translation_memory.json')
 
     return {
         "input_folder": input_dir,
         "translation_queue_folder": translation_queue_dir,
         "translated_queue_folder": translated_queue_dir,
         "mock_glossary_path": mock_glossary_path,
+        "translation_memory_path": translation_memory_path,
         "project_root": project_root
     }
 
@@ -53,7 +55,8 @@ def setup_global_test_environment(integration_test_paths):
         patch('localize.translate_localization_files.DRY_RUN', False),
         patch('localize.translate_localization_files.REPO_ROOT', paths['project_root']),
         patch('localize.translate_localization_files.LANGUAGE_CODES', mock_language_codes),
-        patch('localize.translate_localization_files.NAME_TO_CODE', mock_name_to_code)
+        patch('localize.translate_localization_files.NAME_TO_CODE', mock_name_to_code),
+        patch('localize.translate_localization_files.TRANSLATION_MEMORY_FILE_PATH', paths['translation_memory_path'])
     ]
     started_patches = []
     try:
@@ -85,6 +88,8 @@ def setup_global_test_environment(integration_test_paths):
                 shutil.rmtree(folder)
             except Exception as e:
                 logging.error(f"Failed to delete directory {folder}. Reason: {e}")
+    if os.path.exists(paths['translation_memory_path']):
+        os.remove(paths['translation_memory_path'])
 
 
 @pytest.fixture
@@ -105,6 +110,8 @@ def integration_test_environment(integration_test_paths):
                     shutil.rmtree(file_path)
             except Exception as e:
                 logging.error(f"Failed to delete {file_path}. Reason: {e}")
+    if os.path.exists(paths['translation_memory_path']):
+        os.remove(paths['translation_memory_path'])
 
     # Create mock glossary for each test
     glossary_content = {"de": {"Hello": "Hallo"}}

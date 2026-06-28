@@ -11,6 +11,7 @@ This project has three supported surfaces:
 | Path | Purpose |
 | --- | --- |
 | `README.md` | Product overview and quickstart. |
+| `CHANGELOG.md` | Release notes and version history. |
 | `pyproject.toml` | Python package metadata for `localize-pipeline` and the `localize` console script. |
 | `config.example.yaml` | Minimal generic config starter. |
 | `glossary.example.json` | Minimal glossary example. |
@@ -25,7 +26,8 @@ This project has three supported surfaces:
 
 | Path | Purpose |
 | --- | --- |
-| `localize/cli.py` | `localize formats/init/validate/run`. |
+| `localize/cli.py` | `localize formats/init/check/validate/run/bootstrap-pr`. |
+| `localize/bootstrap_pr.py` | Self-service onboarding branch and PR generation. |
 | `localize/init_config.py` | Config scaffolding and locale detection. |
 | `localize/pipeline_core.py` | Format-agnostic orchestration with injected steps. |
 | `localize/connectors.py` | Public source/processor/reporter/publisher protocols plus reusable filesystem/reporter/processor connectors. |
@@ -37,6 +39,7 @@ This project has three supported surfaces:
 | `localize/plugins.py` | Plugin loading through entry points, env modules, and `--plugin`. |
 | `localize/providers/` | Public provider API. |
 | `localize/model_provider.py` | AISuite and direct OpenAI-compatible provider implementations. |
+| `localize/translation_memory.py` | Exact-match translation memory store and conflict handling. |
 | `localize/translate_localization_files.py` | Runtime translation pipeline. |
 | `localize/translation_quality_gate.py` | Deterministic PR quality gate. |
 | `localize/translation_semantic_reviewer.py` | AI semantic review sidecar. |

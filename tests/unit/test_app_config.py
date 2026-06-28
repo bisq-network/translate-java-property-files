@@ -39,6 +39,8 @@ class TestAppConfig:
             translation_queue_folder="/tmp/queue",
             translated_queue_folder="/tmp/translated",
             translation_key_ledger_file_path="/tmp/ledger.json",
+            translation_memory_file_path="/tmp/memory.json",
+            translation_memory_enabled=True,
             preserve_queues_for_debug=False,
             model_provider=None,
             openai_client=None
@@ -66,6 +68,8 @@ class TestLoadAppConfig:
             "dry_run": True,
             "retranslate_identical_source_strings": True,
             "translation_key_ledger_file_path": "/tmp/test-ledger.json",
+            "translation_memory_file_path": "/tmp/test-memory.json",
+            "translation_memory_enabled": False,
             "quality_gate": {
                 "source_identical_min_block_count": 6,
                 "source_identical_max_count": 25,
@@ -103,6 +107,8 @@ class TestLoadAppConfig:
         assert config.dry_run is True
         assert config.retranslate_identical_source_strings is True
         assert config.translation_key_ledger_file_path == "/tmp/test-ledger.json"
+        assert config.translation_memory_file_path == "/tmp/test-memory.json"
+        assert config.translation_memory_enabled is False
         assert config.quality_gate.source_identical_min_block_count == 6
         assert config.quality_gate.source_identical_max_count == 25
         assert config.quality_gate.source_identical_max_ratio == 0.4
@@ -151,6 +157,10 @@ class TestLoadAppConfig:
         assert config.translation_key_ledger_file_path == os.path.join(
             config.project_root, "logs", "translation_key_ledger.json"
         )
+        assert config.translation_memory_file_path == os.path.join(
+            config.project_root, "logs", "translation_memory.json"
+        )
+        assert config.translation_memory_enabled is True
 
     def test_load_config_reads_project_context_and_format(self):
         mock_config = {

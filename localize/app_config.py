@@ -77,6 +77,8 @@ class AppConfig:
     translation_queue_folder: str
     translated_queue_folder: str
     translation_key_ledger_file_path: str
+    translation_memory_file_path: str
+    translation_memory_enabled: bool
     preserve_queues_for_debug: bool
 
     # Model provider
@@ -562,6 +564,13 @@ def load_app_config() -> AppConfig:
     )
     if not os.path.isabs(translation_key_ledger_file_path):
         translation_key_ledger_file_path = os.path.join(project_root, translation_key_ledger_file_path)
+    translation_memory_file_path = config.get(
+        'translation_memory_file_path',
+        os.path.join(project_root, 'logs', 'translation_memory.json')
+    )
+    if not os.path.isabs(translation_memory_file_path):
+        translation_memory_file_path = os.path.join(project_root, translation_memory_file_path)
+    translation_memory_enabled = _as_bool(config.get('translation_memory_enabled', True), default=True)
 
     project_context = str(config.get('project_context') or '').strip()
     try:
@@ -619,6 +628,8 @@ def load_app_config() -> AppConfig:
         translation_queue_folder=translation_queue_folder,
         translated_queue_folder=translated_queue_folder,
         translation_key_ledger_file_path=translation_key_ledger_file_path,
+        translation_memory_file_path=translation_memory_file_path,
+        translation_memory_enabled=translation_memory_enabled,
         preserve_queues_for_debug=config.get('preserve_queues_for_debug', False),
         model_provider=model_provider,
         openai_client=openai_client,

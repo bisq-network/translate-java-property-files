@@ -52,6 +52,26 @@ def test_public_docs_describe_aisuite_as_default_provider():
     assert "AISuite is optional" not in readme
 
 
+def test_docs_use_localize_init_as_stable_onboarding_surface():
+    docs = "\n".join([
+        (PROJECT_ROOT / "README.md").read_text(encoding="utf-8"),
+        (PROJECT_ROOT / "config.example.yaml").read_text(encoding="utf-8"),
+        (PROJECT_ROOT / "action.yml").read_text(encoding="utf-8"),
+    ])
+
+    assert "localize init" in docs
+    assert "./init.sh" not in docs
+
+
+def test_release_maturity_docs_are_packaged():
+    changelog = PROJECT_ROOT / "CHANGELOG.md"
+    readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert changelog.exists()
+    assert "## [0.1.0]" in changelog.read_text(encoding="utf-8")
+    assert "Pin a tagged release" in readme
+
+
 def test_example_glossary_is_valid_and_small():
     glossary = yaml.safe_load((PROJECT_ROOT / "glossary.example.json").read_text(encoding="utf-8"))
     assert isinstance(glossary, dict) and glossary

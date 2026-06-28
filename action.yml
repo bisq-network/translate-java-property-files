@@ -10,7 +10,7 @@ branding:
 
 inputs:
   config-file:
-    description: "Path to the translation config in your repo (see config.example.yaml or run ./init.sh)."
+    description: "Path to the translation config in your repo (see config.example.yaml or run localize init)."
     required: false
     default: "config.yaml"
   openai-api-key:
