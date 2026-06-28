@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Compatibility wrapper: prefer `localize init` for new docs and automation.
 # Docker-free quickstart: scaffold a minimal config.yaml by auto-detecting
 # target locales from your localization files.
 #

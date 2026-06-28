@@ -28,6 +28,7 @@ localize check --config config.yaml
 localize validate --config config.yaml
 localize run --config config.yaml --dry-run
 localize run --config config.yaml
+localize bootstrap-pr --target-project-root path/to/repo --action-ref v0.1.0
 ```
 
 | Command | What it does |
@@ -37,6 +38,7 @@ localize run --config config.yaml
 | `check` | Runs self-service preflight checks for config, paths, formats, endpoint, and required credentials. |
 | `validate` | Checks config shape, paths, locales, formats, layouts, and endpoint settings. |
 | `run` | Executes the translation pipeline. Use `--dry-run` to force a preview without editing config. |
+| `bootstrap-pr` | Creates an onboarding branch with generated config, glossary, and GitHub workflow files. |
 
 The module form is equivalent:
 
@@ -89,6 +91,27 @@ localize init \
 Generated configs default to `dry_run: true` so first runs can validate
 discovery, queueing, and reports without model calls. Set `dry_run: false` when
 you are ready to let the pipeline write translations.
+
+## Bootstrap Pull Requests
+
+Use `bootstrap-pr` when onboarding another repository:
+
+```bash
+localize bootstrap-pr --target-project-root path/to/repo --action-ref v0.1.0
+```
+
+The command refuses dirty worktrees, creates `localize/onboarding`, writes
+`config.yaml`, `glossary.json`, and `.github/workflows/translate.yml`, then
+commits them locally. The generated workflow starts with `dry-run: true`.
+
+Add network actions explicitly:
+
+```bash
+localize bootstrap-pr --target-project-root path/to/repo --push --open-pr
+```
+
+`--open-pr` uses the GitHub CLI and expects `gh` plus an `origin` remote to be
+configured in the target repository.
 
 ## Mixed-Format Config
 

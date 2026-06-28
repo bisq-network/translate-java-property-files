@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import importlib
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -13,6 +14,7 @@ from typing import Any, Sequence
 import yaml
 
 from localize.app_config import ConfigIssue, validate_config
+from localize.bootstrap_pr import BootstrapPrOptions, create_bootstrap_pr
 from localize.formats import list_localization_adapters, list_localization_formats
 from localize.init_config import main as init_config_main
 from localize.plugins import load_plugins
@@ -113,6 +115,40 @@ def _cmd_init(args: argparse.Namespace) -> int:
     return init_config_main(list(args.init_args))
 
 
+def _cmd_bootstrap_pr(args: argparse.Namespace) -> int:
+    try:
+        result = create_bootstrap_pr(
+            BootstrapPrOptions(
+                target_project_root=args.target_project_root,
+                input_folder=args.input_folder,
+                localization_format=args.localization_format,
+                localization_layout=args.localization_layout,
+                source_locale=args.source_locale,
+                config_path=args.config_file,
+                glossary_path=args.glossary_file,
+                workflow_path=args.workflow_file,
+                branch_name=args.branch,
+                base_branch=args.base_branch,
+                action_ref=args.action_ref,
+                overwrite=args.overwrite,
+                reset_branch=args.reset_branch,
+                push=args.push,
+                open_pr=args.open_pr,
+            )
+        )
+    except (FileExistsError, OSError, RuntimeError, subprocess.CalledProcessError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"Created onboarding commit {result.commit_sha} on branch {result.branch_name}")
+    if result.opened_pr:
+        print("Opened onboarding pull request")
+    elif result.pushed:
+        print("Pushed onboarding branch")
+    else:
+        print("Review the branch, then push/open a pull request when ready")
+    return 0
+
+
 def _extract_plugin_args(raw_argv: Sequence[str]) -> tuple[list[str], list[str]]:
     """Return plugin modules and argv with all --plugin flags removed."""
     plugins: list[str] = []
@@ -192,6 +228,43 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Scaffold a minimal config by detecting locales in an input folder.",
     )
     init_parser.set_defaults(func=_cmd_init, init_args=())
+
+    bootstrap_parser = subparsers.add_parser(
+        "bootstrap-pr",
+        help="Create an onboarding branch with config, glossary, and GitHub workflow.",
+    )
+    bootstrap_parser.add_argument("--target-project-root", default=".", help="Target git repository root.")
+    bootstrap_parser.add_argument("--input-folder", default=None, help="Localization folder in the target repo.")
+    bootstrap_parser.add_argument(
+        "--localization-format",
+        default="java_properties",
+        help="Localization format for explicit --input-folder mode.",
+    )
+    bootstrap_parser.add_argument(
+        "--localization-layout",
+        default="suffix",
+        help="Localization layout for explicit --input-folder mode.",
+    )
+    bootstrap_parser.add_argument("--source-locale", default="en", help="Source locale code.")
+    bootstrap_parser.add_argument("--config-file", default="config.yaml", help="Config file to create.")
+    bootstrap_parser.add_argument("--glossary-file", default="glossary.json", help="Glossary file to create.")
+    bootstrap_parser.add_argument(
+        "--workflow-file",
+        default=".github/workflows/translate.yml",
+        help="GitHub Actions workflow file to create.",
+    )
+    bootstrap_parser.add_argument("--branch", default="localize/onboarding", help="Onboarding branch name.")
+    bootstrap_parser.add_argument("--base-branch", default=None, help="Optional base branch to check out first.")
+    bootstrap_parser.add_argument("--action-ref", default="v0.1.0", help="Action ref to use in the generated workflow.")
+    bootstrap_parser.add_argument("--overwrite", action="store_true", help="Replace existing onboarding files.")
+    bootstrap_parser.add_argument(
+        "--reset-branch",
+        action="store_true",
+        help="Reset an existing onboarding branch instead of refusing to overwrite it.",
+    )
+    bootstrap_parser.add_argument("--push", action="store_true", help="Push the onboarding branch to origin.")
+    bootstrap_parser.add_argument("--open-pr", action="store_true", help="Push and open the onboarding PR with gh.")
+    bootstrap_parser.set_defaults(func=_cmd_bootstrap_pr)
 
     return parser
 

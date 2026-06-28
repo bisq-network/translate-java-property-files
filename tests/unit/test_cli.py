@@ -253,32 +253,41 @@ def test_cli_validate_returns_nonzero_for_config_errors(tmp_path, capsys):
 
 
 def test_cli_run_sets_config_env_and_delegates_to_runtime(tmp_path, monkeypatch):
+    monkeypatch.delenv("TRANSLATOR_CONFIG_FILE", raising=False)
     config_path = tmp_path / "config.yaml"
     config_path.write_text("dry_run: true\n", encoding="utf-8")
     runtime = SimpleNamespace(main=AsyncMock())
 
-    with patch("localize.cli.importlib.import_module", return_value=runtime) as import_module:
-        exit_code = cli.main(["run", "--config", str(config_path)])
+    try:
+        with patch("localize.cli.importlib.import_module", return_value=runtime) as import_module:
+            exit_code = cli.main(["run", "--config", str(config_path)])
 
-    assert exit_code == 0
-    assert os.environ["TRANSLATOR_CONFIG_FILE"] == str(config_path)
-    import_module.assert_called_once_with("localize.translate_localization_files")
-    runtime.main.assert_awaited_once()
+        assert exit_code == 0
+        assert os.environ["TRANSLATOR_CONFIG_FILE"] == str(config_path)
+        import_module.assert_called_once_with("localize.translate_localization_files")
+        runtime.main.assert_awaited_once()
+    finally:
+        os.environ.pop("TRANSLATOR_CONFIG_FILE", None)
 
 
 def test_cli_run_dry_run_sets_runtime_override(tmp_path, monkeypatch):
+    monkeypatch.delenv("TRANSLATOR_CONFIG_FILE", raising=False)
     monkeypatch.delenv("LOCALIZE_DRY_RUN", raising=False)
     config_path = tmp_path / "config.yaml"
     config_path.write_text("dry_run: false\n", encoding="utf-8")
     runtime = SimpleNamespace(main=AsyncMock())
 
-    with patch("localize.cli.importlib.import_module", return_value=runtime):
-        exit_code = cli.main(["run", "--config", str(config_path), "--dry-run"])
+    try:
+        with patch("localize.cli.importlib.import_module", return_value=runtime):
+            exit_code = cli.main(["run", "--config", str(config_path), "--dry-run"])
 
-    assert exit_code == 0
-    assert os.environ["TRANSLATOR_CONFIG_FILE"] == str(config_path)
-    assert os.environ["LOCALIZE_DRY_RUN"] == "true"
-    runtime.main.assert_awaited_once()
+        assert exit_code == 0
+        assert os.environ["TRANSLATOR_CONFIG_FILE"] == str(config_path)
+        assert os.environ["LOCALIZE_DRY_RUN"] == "true"
+        runtime.main.assert_awaited_once()
+    finally:
+        os.environ.pop("TRANSLATOR_CONFIG_FILE", None)
+        os.environ.pop("LOCALIZE_DRY_RUN", None)
 
 
 def test_cli_init_delegates_to_existing_init_config():
@@ -289,10 +298,41 @@ def test_cli_init_delegates_to_existing_init_config():
     init_main.assert_called_once_with(["--input-folder", "i18n"])
 
 
+def test_cli_bootstrap_pr_delegates_to_onboarding_generator(capsys):
+    result = SimpleNamespace(
+        branch_name="localize/onboarding",
+        commit_sha="abc123",
+        pushed=False,
+        opened_pr=False,
+    )
+    with patch("localize.cli.create_bootstrap_pr", return_value=result) as create:
+        exit_code = cli.main([
+            "bootstrap-pr",
+            "--target-project-root",
+            "/repo",
+            "--input-folder",
+            "i18n",
+            "--action-ref",
+            "v0.1.0",
+        ])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    options = create.call_args.args[0]
+    assert options.target_project_root == "/repo"
+    assert options.input_folder == "i18n"
+    assert options.action_ref == "v0.1.0"
+    assert "Created onboarding commit abc123" in captured.out
+
+
 def test_pyproject_exposes_localize_console_script():
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
     assert pyproject["project"]["name"] == "localize-pipeline"
+    assert pyproject["project"]["version"] == "0.1.0"
+    assert pyproject["project"]["urls"]["Repository"]
+    assert pyproject["project"]["urls"]["Changelog"]
+    assert "Programming Language :: Python :: 3 :: Only" in pyproject["project"]["classifiers"]
     assert pyproject["project"]["scripts"]["localize"] == "localize.cli:main"
     assert pyproject["tool"]["setuptools"]["packages"]["find"]["include"] == ["localize*"]
 
@@ -304,6 +344,15 @@ def test_readme_documents_cli_quickstart():
     assert "localize check" in readme
     assert "localize validate" in readme
     assert "localize run --dry-run" in readme
+    assert "./init.sh" not in readme
+
+
+def test_package_version_matches_pyproject():
+    import localize
+
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+    assert localize.__version__ == pyproject["project"]["version"]
 
 
 def test_generic_examples_are_cli_validatable():

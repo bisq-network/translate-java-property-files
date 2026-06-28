@@ -402,6 +402,8 @@ def build_config(
         "model_name": model_name,
         "review_model_name": review_model_name,
         "dry_run": dry_run,
+        "translation_memory_enabled": True,
+        "translation_memory_file_path": "logs/translation_memory.json",
         "supported_locales": locales,
     }
     if localization_profiles:

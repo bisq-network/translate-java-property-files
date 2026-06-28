@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
 from typing import Dict, List, Tuple, Optional, Set
 
@@ -51,6 +52,11 @@ from localize.pipeline_core import (
     run_translation_pipeline,
 )
 from localize.translation_prompts import build_translation_system_prompt
+from localize.translation_memory import (
+    TranslationMemory,
+    load_translation_memory,
+    save_translation_memory,
+)
 from localize.translation_validator import (
     check_placeholder_parity,
     check_encoding_and_mojibake,
@@ -99,6 +105,8 @@ LOCALIZATION_PROFILES = config.localization_profiles
 TRANSLATION_QUEUE_FOLDER = config.translation_queue_folder
 TRANSLATED_QUEUE_FOLDER = config.translated_queue_folder
 TRANSLATION_KEY_LEDGER_FILE_PATH = config.translation_key_ledger_file_path
+TRANSLATION_MEMORY_FILE_PATH = config.translation_memory_file_path
+TRANSLATION_MEMORY_ENABLED = config.translation_memory_enabled
 PRESERVE_QUEUES_FOR_DEBUG = config.preserve_queues_for_debug
 MODEL_PROVIDER = config.model_provider
 client = config.openai_client
@@ -249,6 +257,82 @@ def build_file_key_ledger(
             entry["status"] = "failed"
         file_ledger[key] = entry
     return file_ledger
+
+
+@dataclass(frozen=True)
+class TranslationMemoryPlan:
+    """Split of cached translation-memory results and pending model work."""
+
+    cached_results: List[Tuple[int, str]]
+    pending_texts: List[str]
+    pending_line_indices: List[int]
+    pending_keys: List[str]
+    pending_positions: List[int]
+
+
+def apply_translation_memory(
+        *,
+        texts_to_translate: List[str],
+        indices: List[int],
+        keys_to_translate: List[str],
+        memory: Optional[TranslationMemory],
+        locale: str,
+        format_id: str,
+) -> TranslationMemoryPlan:
+    """Reuse exact approved translations and keep unresolved keys for the model."""
+    if memory is None:
+        return TranslationMemoryPlan(
+            cached_results=[],
+            pending_texts=list(texts_to_translate),
+            pending_line_indices=list(indices),
+            pending_keys=list(keys_to_translate),
+            pending_positions=list(range(len(texts_to_translate))),
+        )
+
+    cached_results: List[Tuple[int, str]] = []
+    pending_texts: List[str] = []
+    pending_line_indices: List[int] = []
+    pending_keys: List[str] = []
+    pending_positions: List[int] = []
+    for position, (text, line_index, key) in enumerate(zip(texts_to_translate, indices, keys_to_translate)):
+        cached = memory.lookup(text, locale=locale, format_id=format_id)
+        if cached is not None:
+            cached_results.append((position, cached))
+            logger.info("Reused translation memory for key '%s'.", key)
+            continue
+        pending_texts.append(text)
+        pending_line_indices.append(line_index)
+        pending_keys.append(key)
+        pending_positions.append(position)
+    return TranslationMemoryPlan(
+        cached_results=cached_results,
+        pending_texts=pending_texts,
+        pending_line_indices=pending_line_indices,
+        pending_keys=pending_keys,
+        pending_positions=pending_positions,
+    )
+
+
+def update_translation_memory(
+        memory: TranslationMemory,
+        source_translations: Dict[str, str],
+        final_translations: Dict[str, str],
+        keys: List[str],
+        *,
+        locale: str,
+        format_id: str,
+        failed_keys: Set[str],
+) -> None:
+    """Record successful translations for future exact-match reuse."""
+    for key in keys:
+        if key in failed_keys:
+            continue
+        source_value = source_translations.get(key)
+        target_value = final_translations.get(key)
+        if source_value is None or target_value is None:
+            continue
+        memory.record(source_value, target_value, locale=locale, format_id=format_id)
+
 
 def extract_texts_to_translate(
         parsed_lines: List[Dict],
@@ -1765,6 +1849,11 @@ async def process_translation_queue(
     # Load the glossary from the JSON file
     glossary = load_glossary(glossary_file_path)
     key_ledger = load_translation_key_ledger(TRANSLATION_KEY_LEDGER_FILE_PATH)
+    translation_memory = (
+        load_translation_memory(TRANSLATION_MEMORY_FILE_PATH)
+        if TRANSLATION_MEMORY_ENABLED
+        else None
+    )
 
     # Set up a single semaphore for all API calls to control concurrency globally.
     # A value of 1 ensures that only one API request is active at any time.
@@ -1882,10 +1971,19 @@ async def process_translation_queue(
             logger.info(f"No texts to translate in file '{translation_file}'.")
             continue
 
+        memory_plan = apply_translation_memory(
+            texts_to_translate=texts_to_translate,
+            indices=indices,
+            keys_to_translate=keys_to_translate,
+            memory=translation_memory,
+            locale=language_code,
+            format_id=localization_format.id,
+        )
+
         # Pre-run scope/cost preview for this file (ballpark — actuals logged at the end).
         provider = MODEL_PROVIDER or _FALLBACK_PROVIDER
         file_estimate = provider.estimate_run_cost(
-            num_keys=len(keys_to_translate),
+            num_keys=len(memory_plan.pending_keys),
             locale_codes=[language_code],
             translate_model=MODEL_NAME,
             review_model=REVIEW_MODEL_NAME,
@@ -1905,24 +2003,29 @@ async def process_translation_queue(
                 glossary,
                 semaphore,
                 rate_limiter,  # Pass the rate limiter
-                idx,
+                position,
                 localization_format,
             )
-            for idx, (text, key) in enumerate(zip(texts_to_translate, keys_to_translate))
+            for text, key, position in zip(
+                memory_plan.pending_texts,
+                memory_plan.pending_keys,
+                memory_plan.pending_positions,
+            )
         ]
 
         # Run tasks concurrently with progress indication
-        results = []
+        results = list(memory_plan.cached_results)
         # The tqdm output is directed to stderr by default, which is ideal.
         # It prevents progress bars from being broken by stdout prints.
-        for coro in tqdm(
-                asyncio.as_completed(tasks),
-                desc=f"Translating {translation_file}",
-                unit="translation",
-                total=len(tasks)  # Provide the total number of tasks
-        ):
-            index, result = await coro
-            results.append((index, result))
+        if tasks:
+            for coro in tqdm(
+                    asyncio.as_completed(tasks),
+                    desc=f"Translating {translation_file}",
+                    unit="translation",
+                    total=len(tasks)  # Provide the total number of tasks
+            ):
+                index, result = await coro
+                results.append((index, result))
 
         # Sort results by index to ensure correct order
         results.sort(key=lambda x: x[0])
@@ -1939,16 +2042,6 @@ async def process_translation_queue(
         )
         draft_content = adapter.reassemble_file(draft_lines)
 
-        # --- Holistic Review Step ---
-        # Instead of one large review, we chunk the keys to avoid token limits.
-        logger.info(f"Performing holistic review for {len(keys_to_translate)} keys in '{translation_file}'...")
-
-        # Create chunks of keys
-        key_chunks = [
-            keys_to_translate[i:i + HOLISTIC_REVIEW_CHUNK_SIZE]
-            for i in range(0, len(keys_to_translate), HOLISTIC_REVIEW_CHUNK_SIZE)
-        ]
-
         # We need a dictionary of the draft translations to build targeted context for each chunk.
         # This is easier than parsing the string repeatedly.
         with tempfile.NamedTemporaryFile(
@@ -1963,36 +2056,55 @@ async def process_translation_queue(
         os.remove(temp_draft_path)
 
         final_corrected_translations = {}
-        style_rules_text_for_review = PRECOMPUTED_STYLE_RULES_TEXT.get(language_code, "")
+        if not memory_plan.pending_keys:
+            logger.info(
+                "Skipping holistic review for '%s' because all %d keys came from translation memory.",
+                translation_file,
+                len(keys_to_translate),
+            )
+            for key in keys_to_translate:
+                final_corrected_translations[key] = draft_translations.get(key, "")
+        else:
+            # --- Holistic Review Step ---
+            # Instead of one large review, we chunk the keys to avoid token limits.
+            logger.info(f"Performing holistic review for {len(keys_to_translate)} keys in '{translation_file}'...")
 
-        review_results = await asyncio.gather(
-            *[holistic_review_async(
-                source_content=adapter.build_review_content(source_translations, key_chunk),
-                translated_content=adapter.build_review_content(draft_translations, key_chunk),
-                target_language=target_language,
-                keys_to_review=key_chunk,
-                semaphore=semaphore,
-                rate_limiter=rate_limiter,
-                style_rules_text=style_rules_text_for_review,
-                localization_format=localization_format,
-            ) for key_chunk in key_chunks]
-        )
+            # Create chunks of keys
+            key_chunks = [
+                keys_to_translate[i:i + HOLISTIC_REVIEW_CHUNK_SIZE]
+                for i in range(0, len(keys_to_translate), HOLISTIC_REVIEW_CHUNK_SIZE)
+            ]
 
-        try:
-            for i, (corrected_chunk, key_chunk) in enumerate(zip(review_results, key_chunks)):
-                if corrected_chunk is not None:
-                    if corrected_chunk:
-                        final_corrected_translations.update(corrected_chunk)
+            style_rules_text_for_review = PRECOMPUTED_STYLE_RULES_TEXT.get(language_code, "")
+
+            review_results = await asyncio.gather(
+                *[holistic_review_async(
+                    source_content=adapter.build_review_content(source_translations, key_chunk),
+                    translated_content=adapter.build_review_content(draft_translations, key_chunk),
+                    target_language=target_language,
+                    keys_to_review=key_chunk,
+                    semaphore=semaphore,
+                    rate_limiter=rate_limiter,
+                    style_rules_text=style_rules_text_for_review,
+                    localization_format=localization_format,
+                ) for key_chunk in key_chunks]
+            )
+
+            try:
+                for i, (corrected_chunk, key_chunk) in enumerate(zip(review_results, key_chunks)):
+                    if corrected_chunk is not None:
+                        if corrected_chunk:
+                            final_corrected_translations.update(corrected_chunk)
+                        else:
+                            logger.info("Holistic review returned no corrections for this chunk; keeping draft values.")
+                            for key in key_chunk:
+                                final_corrected_translations[key] = draft_translations.get(key, "")
                     else:
-                        logger.info("Holistic review returned no corrections for this chunk; keeping draft values.")
+                        logger.warning(f"Holistic review for chunk {i + 1} failed; keeping draft values for this chunk.")
                         for key in key_chunk:
                             final_corrected_translations[key] = draft_translations.get(key, "")
-                else:
-                    logger.warning(f"Holistic review for chunk {i + 1} failed; keeping draft values for this chunk.")
-                    for key in key_chunk:
-                        final_corrected_translations[key] = draft_translations.get(key, "")
-        except Exception:
-            logger.exception("An error occurred during asyncio.gather for holistic review of %s", translation_file)
+            except Exception:
+                logger.exception("An error occurred during asyncio.gather for holistic review of %s", translation_file)
 
         # Always apply the results from the review stage, which includes fallbacks to draft for failed chunks.
         logger.info("Applying corrected translations (including any draft fallbacks).")
@@ -2090,6 +2202,17 @@ async def process_translation_queue(
             failed_keys=set(failed_keys)
         )
         save_translation_key_ledger(TRANSLATION_KEY_LEDGER_FILE_PATH, key_ledger)
+        if translation_memory is not None and not DRY_RUN:
+            update_translation_memory(
+                translation_memory,
+                source_translations,
+                valid_translations,
+                keys_to_translate,
+                locale=language_code,
+                format_id=localization_format.id,
+                failed_keys=set(failed_keys),
+            )
+            save_translation_memory(TRANSLATION_MEMORY_FILE_PATH, translation_memory)
 
         processed_files_count += 1
         processed_filenames.append(translation_file)
