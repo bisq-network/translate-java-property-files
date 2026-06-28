@@ -35,6 +35,9 @@ class BootstrapPrOptions:
     pr_title: str = "Add Localize Pipeline onboarding"
     overwrite: bool = False
     reset_branch: bool = False
+    onboarding_guide_path: Optional[str] = "docs/localize-pipeline.md"
+    plugin_modules: tuple[str, ...] = ()
+    plugin_install_command: Optional[str] = None
     push: bool = False
     open_pr: bool = False
 
@@ -137,7 +140,43 @@ def _copy_example_glossary(target: Path) -> None:
     shutil.copyfile(source, target)
 
 
-def _render_workflow(*, action_ref: str, config_path: str, base_branch: str) -> str:
+def _indent_block(value: str, spaces: int) -> str:
+    prefix = " " * spaces
+    return "\n".join(f"{prefix}{line}" if line else prefix for line in value.splitlines())
+
+
+def _render_action_inputs(
+    *,
+    config_path: str,
+    plugin_modules: Sequence[str],
+    plugin_install_command: str | None,
+) -> str:
+    lines = [
+        f"          config-file: {config_path}",
+        "          openai-api-key: ${{ secrets.OPENAI_API_KEY }}",
+        "          dry-run: true",
+    ]
+    if plugin_modules:
+        lines.append(f"          plugin-modules: {','.join(plugin_modules)}")
+    if plugin_install_command:
+        lines.append("          plugin-install-command: |")
+        lines.append(_indent_block(plugin_install_command, 12))
+    return "\n".join(lines)
+
+
+def _render_workflow(
+    *,
+    action_ref: str,
+    config_path: str,
+    base_branch: str,
+    plugin_modules: Sequence[str],
+    plugin_install_command: str | None,
+) -> str:
+    action_inputs = _render_action_inputs(
+        config_path=config_path,
+        plugin_modules=plugin_modules,
+        plugin_install_command=plugin_install_command,
+    )
     return f"""name: Translate
 on:
   push:
@@ -157,9 +196,80 @@ jobs:
           fetch-depth: 0
       - uses: bisq-network/translate-java-property-files@{action_ref}
         with:
-          config-file: {config_path}
-          openai-api-key: ${{{{ secrets.OPENAI_API_KEY }}}}
-          dry-run: true
+{action_inputs}
+"""
+
+
+def _render_onboarding_guide(
+    *,
+    config_path: str,
+    glossary_path: str,
+    workflow_path: str,
+    action_ref: str,
+    plugin_modules: Sequence[str],
+    plugin_install_command: str | None,
+) -> str:
+    plugin_section = ""
+    if plugin_modules or plugin_install_command:
+        plugin_lines = ["## Custom Format Plugins", ""]
+        if plugin_modules:
+            plugin_lines.extend([
+                "The generated workflow loads these adapter modules:",
+                "",
+                "```text",
+                ",".join(plugin_modules),
+                "```",
+                "",
+            ])
+        if plugin_install_command:
+            plugin_lines.extend([
+                "It installs plugin dependencies with:",
+                "",
+                "```bash",
+                plugin_install_command,
+                "```",
+                "",
+            ])
+        plugin_section = "\n".join(plugin_lines)
+
+    return f"""# Localize Pipeline Onboarding
+
+This repository was bootstrapped for Localize Pipeline. The generated workflow is
+safe by default: it runs with `dry-run: true` until the first setup PR is merged
+and the team explicitly enables translation writes.
+
+## Files
+
+- `{config_path}`: pipeline config generated from the detected localization files.
+- `{glossary_path}`: starter glossary for project-specific terms.
+- `{workflow_path}`: GitHub Action workflow pinned to `{action_ref}`.
+
+## Validate Locally
+
+```bash
+python3 -m venv venv
+./venv/bin/pip install localize-pipeline
+./venv/bin/localize check --config {config_path}
+./venv/bin/localize run --dry-run --config {config_path}
+```
+
+## Enable The GitHub Action
+
+1. Add the `OPENAI_API_KEY` repository secret, or configure `api-base-url` for a
+   local OpenAI-compatible endpoint.
+2. Merge this onboarding PR while the workflow still has `dry-run: true`.
+3. Trigger one manual workflow run with `process-all-files: true` for the first
+   backfill.
+4. Review the translation PR.
+5. Set `dry-run: false` for normal incremental translation runs.
+
+{plugin_section}## Maintenance
+
+- Keep glossary changes reviewed like code.
+- Use `localize memory stats --memory-file logs/translation_memory.json` to
+  inspect the exact-match translation memory.
+- Use `localize memory export` and `localize memory import` when sharing approved
+  translation memory between projects.
 """
 
 
@@ -223,12 +333,21 @@ def create_bootstrap_pr(options: BootstrapPrOptions) -> BootstrapPrResult:
     config_path = _repo_relative_path(repo, options.config_path, "config-file")
     glossary_path = _repo_relative_path(repo, options.glossary_path, "glossary-file")
     workflow_path = _repo_relative_path(repo, options.workflow_path, "workflow-file")
+    onboarding_guide_path = (
+        _repo_relative_path(repo, options.onboarding_guide_path, "onboarding-guide-file")
+        if options.onboarding_guide_path
+        else None
+    )
     input_folder = (
         _repo_relative_path(repo, options.input_folder, "input-folder")
         if options.input_folder
         else None
     )
-    created_files = (config_path, glossary_path, workflow_path)
+    created_files = tuple(
+        path
+        for path in (config_path, glossary_path, workflow_path, onboarding_guide_path)
+        if path is not None
+    )
     _assert_can_write(repo, created_files, overwrite=options.overwrite)
     base_branch = options.base_branch or "main"
 
@@ -244,9 +363,25 @@ def create_bootstrap_pr(options: BootstrapPrOptions) -> BootstrapPrResult:
             action_ref=options.action_ref,
             config_path=config_path,
             base_branch=base_branch,
+            plugin_modules=options.plugin_modules,
+            plugin_install_command=options.plugin_install_command,
         ),
         encoding="utf-8",
     )
+    if onboarding_guide_path:
+        guide_file = repo / onboarding_guide_path
+        guide_file.parent.mkdir(parents=True, exist_ok=True)
+        guide_file.write_text(
+            _render_onboarding_guide(
+                config_path=config_path,
+                glossary_path=glossary_path,
+                workflow_path=workflow_path,
+                action_ref=options.action_ref,
+                plugin_modules=options.plugin_modules,
+                plugin_install_command=options.plugin_install_command,
+            ),
+            encoding="utf-8",
+        )
 
     _git(repo, "add", *created_files)
     _git(repo, "commit", "-m", options.commit_message)

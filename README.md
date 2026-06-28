@@ -178,6 +178,7 @@ localize validate --config config.yaml
 localize run --dry-run --config config.yaml
 localize run --config config.yaml
 localize bootstrap-pr --target-project-root path/to/repo --action-ref v0.1.0
+localize memory stats --memory-file logs/translation_memory.json
 ```
 
 Custom adapter modules can be loaded before any command:
@@ -205,8 +206,11 @@ commits:
 - `config.yaml` generated from detected localization files
 - `glossary.json` copied from the generic example
 - `.github/workflows/translate.yml` in safe `dry-run: true` mode
+- `docs/localize-pipeline.md` with the target repository's rollout checklist
 
 Add `--push --open-pr` when the target repo has `origin` and `gh` configured.
+For custom adapters, pass `--plugin-module` and `--plugin-install-command`; the
+generated workflow will install and load the adapter before running checks.
 
 ## Public Python API
 
@@ -239,6 +243,25 @@ translation_memory_file_path: "logs/translation_memory.json"
 ```
 
 Use a shared path if several projects should reuse one approved memory store.
+Manage memory stores with:
+
+```bash
+localize memory stats --memory-file logs/translation_memory.json
+localize memory export --memory-file logs/translation_memory.json --output shared-memory.json
+localize memory import --memory-file logs/translation_memory.json --input shared-memory.json
+localize memory promote --memory-file logs/translation_memory.json \
+  --source-text "Save changes" \
+  --target-text "Änderungen speichern" \
+  --locale de \
+  --format-id json
+localize memory suggest --memory-file logs/translation_memory.json \
+  --source-text "Save change" \
+  --locale de \
+  --format-id json
+```
+
+Fuzzy memory suggestions are review aids only. The runtime still reuses exact
+matches only.
 
 ## Releases
 

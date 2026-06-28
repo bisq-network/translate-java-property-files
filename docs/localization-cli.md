@@ -29,6 +29,7 @@ localize validate --config config.yaml
 localize run --config config.yaml --dry-run
 localize run --config config.yaml
 localize bootstrap-pr --target-project-root path/to/repo --action-ref v0.1.0
+localize memory stats --memory-file logs/translation_memory.json
 ```
 
 | Command | What it does |
@@ -39,6 +40,7 @@ localize bootstrap-pr --target-project-root path/to/repo --action-ref v0.1.0
 | `validate` | Checks config shape, paths, locales, formats, layouts, and endpoint settings. |
 | `run` | Executes the translation pipeline. Use `--dry-run` to force a preview without editing config. |
 | `bootstrap-pr` | Creates an onboarding branch with generated config, glossary, and GitHub workflow files. |
+| `memory` | Inspects, imports, exports, promotes, and suggests translation-memory entries. |
 
 The module form is equivalent:
 
@@ -101,8 +103,9 @@ localize bootstrap-pr --target-project-root path/to/repo --action-ref v0.1.0
 ```
 
 The command refuses dirty worktrees, creates `localize/onboarding`, writes
-`config.yaml`, `glossary.json`, and `.github/workflows/translate.yml`, then
-commits them locally. The generated workflow starts with `dry-run: true`.
+`config.yaml`, `glossary.json`, `.github/workflows/translate.yml`, and
+`docs/localize-pipeline.md`, then commits them locally. The generated workflow
+starts with `dry-run: true`.
 
 Add network actions explicitly:
 
@@ -112,6 +115,19 @@ localize bootstrap-pr --target-project-root path/to/repo --push --open-pr
 
 `--open-pr` uses the GitHub CLI and expects `gh` plus an `origin` remote to be
 configured in the target repository.
+
+For custom adapters:
+
+```bash
+localize bootstrap-pr \
+  --target-project-root path/to/repo \
+  --action-ref v0.1.0 \
+  --plugin-module my_project.localize_adapter \
+  --plugin-install-command "python -m pip install ."
+```
+
+The generated workflow forwards those values to the Action's first-class plugin
+inputs.
 
 ## Mixed-Format Config
 
@@ -179,6 +195,53 @@ my_format = "my_package.localize_adapter:register"
 
 The entry point can be a callable registration function or a module-level object
 whose import registers adapters.
+
+## Translation Memory
+
+Exact-match translation memory is stored in JSON. The runtime records
+validation-safe translations and reuses exact source/locale/format matches.
+
+Inspect a memory file:
+
+```bash
+localize memory stats --memory-file logs/translation_memory.json
+localize memory stats --memory-file logs/translation_memory.json --output-format json
+```
+
+Share approved entries across projects:
+
+```bash
+localize memory export \
+  --memory-file logs/translation_memory.json \
+  --output shared-memory.json
+
+localize memory import \
+  --memory-file logs/translation_memory.json \
+  --input shared-memory.json
+```
+
+Promote a reviewed translation manually:
+
+```bash
+localize memory promote \
+  --memory-file logs/translation_memory.json \
+  --source-text "Save changes" \
+  --target-text "Änderungen speichern" \
+  --locale de \
+  --format-id json
+```
+
+Find fuzzy candidates for human review:
+
+```bash
+localize memory suggest \
+  --memory-file logs/translation_memory.json \
+  --source-text "Save change" \
+  --locale de \
+  --format-id json
+```
+
+Fuzzy candidates are never applied automatically by the pipeline.
 
 ## Custom Adapter Contract
 
