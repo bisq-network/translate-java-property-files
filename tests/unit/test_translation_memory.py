@@ -2,7 +2,9 @@ import json
 
 from localize.translation_memory import (
     TranslationMemory,
+    load_translation_memory_strict,
     load_translation_memory,
+    memory_source_hash,
     merge_translation_memory,
     save_translation_memory,
     translation_memory_suggestions,
@@ -54,6 +56,26 @@ def test_load_translation_memory_missing_or_invalid_file_is_empty(tmp_path):
     invalid.write_text(json.dumps({"entries": []}), encoding="utf-8")
 
     assert load_translation_memory(invalid).to_payload()["entries"] == {}
+
+
+def test_strict_load_translation_memory_rejects_missing_and_invalid_files(tmp_path):
+    missing = tmp_path / "missing.json"
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("{not-json", encoding="utf-8")
+
+    try:
+        load_translation_memory_strict(missing, require_exists=True)
+    except FileNotFoundError:
+        pass
+    else:
+        raise AssertionError("missing strict memory file should fail")
+
+    try:
+        load_translation_memory_strict(invalid)
+    except ValueError as exc:
+        assert "invalid translation memory" in str(exc)
+    else:
+        raise AssertionError("invalid strict memory file should fail")
 
 
 def test_save_translation_memory_is_best_effort(monkeypatch, tmp_path):
@@ -115,6 +137,32 @@ def test_translation_memory_suggestions_are_fuzzy_but_not_automatic_reuse():
     assert suggestions[0].target_text == "Änderungen speichern"
     assert suggestions[0].score < 1.0
     assert memory.lookup("Save change", locale="de", format_id="json") is None
+
+
+def test_translation_memory_suggestions_include_legacy_exact_hash_entries():
+    legacy = TranslationMemory.from_payload({
+        "entries": {
+            "json:de:legacy": {
+                "source_hash": memory_source_hash("Save changes"),
+                "locale": "de",
+                "format_id": "json",
+                "target": "Änderungen speichern",
+                "status": "active",
+            }
+        }
+    })
+
+    suggestions = translation_memory_suggestions(
+        legacy,
+        "Save changes",
+        locale="de",
+        format_id="json",
+        min_score=1.0,
+    )
+
+    assert suggestions[0].source_text == "Save changes"
+    assert suggestions[0].target_text == "Änderungen speichern"
+    assert suggestions[0].score == 1.0
 
 
 def test_apply_translation_memory_splits_hits_from_model_work():

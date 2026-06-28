@@ -372,6 +372,66 @@ def test_cli_memory_import_export_stats_and_suggest(tmp_path, capsys):
     assert "Änderungen speichern" in suggestions
 
 
+def test_cli_memory_import_rejects_invalid_input_file(tmp_path, capsys):
+    destination = tmp_path / "destination-memory.json"
+    invalid = tmp_path / "invalid-memory.json"
+    invalid.write_text("{not-json", encoding="utf-8")
+
+    exit_code = cli.main(["memory", "import", "--memory-file", str(destination), "--input", str(invalid)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "invalid translation memory" in captured.err
+    assert not destination.exists()
+
+
+def test_cli_memory_promote_rejects_corrupt_target_file(tmp_path, capsys):
+    corrupt = tmp_path / "corrupt-memory.json"
+    corrupt.write_text("{not-json", encoding="utf-8")
+
+    exit_code = cli.main([
+        "memory",
+        "promote",
+        "--memory-file",
+        str(corrupt),
+        "--source-text",
+        "Save",
+        "--target-text",
+        "Speichern",
+        "--locale",
+        "de",
+        "--format-id",
+        "json",
+    ])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "invalid translation memory" in captured.err
+    assert corrupt.read_text(encoding="utf-8") == "{not-json"
+
+
+def test_cli_memory_suggest_rejects_negative_limit(capsys):
+    try:
+        cli.main([
+            "memory",
+            "suggest",
+            "--source-text",
+            "Save",
+            "--locale",
+            "de",
+            "--format-id",
+            "json",
+            "--limit",
+            "-1",
+        ])
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("negative limit should fail argument parsing")
+
+    assert "non-negative integer" in capsys.readouterr().err
+
+
 def test_pyproject_exposes_localize_console_script():
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 

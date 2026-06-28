@@ -241,14 +241,20 @@ def translation_memory_suggestions(
             continue
         entry_source = entry.get("source")
         target_text = entry.get("target")
-        if entry_source is None or target_text is None:
+        if target_text is None:
             continue
-        score = SequenceMatcher(
-            None,
-            normalized_source,
-            normalize_memory_source(str(entry_source)),
-        ).ratio()
-        if score >= min_score and score < 1.0:
+        if entry_source is None:
+            if entry.get("source_hash") != memory_source_hash(source_text):
+                continue
+            entry_source = source_text
+            score = 1.0
+        else:
+            score = SequenceMatcher(
+                None,
+                normalized_source,
+                normalize_memory_source(str(entry_source)),
+            ).ratio()
+        if score >= min_score:
             suggestions.append(
                 TranslationMemorySuggestion(
                     source_text=str(entry_source),
@@ -291,6 +297,29 @@ def load_translation_memory(path: str | Path) -> TranslationMemory:
         return TranslationMemory()
     if not isinstance(payload, Mapping):
         return TranslationMemory()
+    return TranslationMemory.from_payload(payload)
+
+
+def load_translation_memory_strict(
+    path: str | Path,
+    *,
+    require_exists: bool = False,
+) -> TranslationMemory:
+    """Load memory for explicit file-management commands, raising on bad input."""
+    memory_path = Path(path)
+    if not memory_path.exists():
+        if require_exists:
+            raise FileNotFoundError(f"translation memory file not found: {memory_path}")
+        return TranslationMemory()
+    try:
+        payload = json.loads(memory_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid translation memory file: {memory_path}") from exc
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"invalid translation memory file: {memory_path}")
+    entries = payload.get("entries", {})
+    if not isinstance(entries, Mapping):
+        raise ValueError(f"invalid translation memory entries in: {memory_path}")
     return TranslationMemory.from_payload(payload)
 
 

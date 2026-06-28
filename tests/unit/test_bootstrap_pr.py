@@ -70,7 +70,9 @@ def test_bootstrap_pr_creates_onboarding_branch_commit_and_files(tmp_path):
     assert isinstance(glossary, dict)
 
     guide = (repo / "docs/localize-pipeline.md").read_text(encoding="utf-8")
-    assert "localize check --config config.yaml" in guide
+    assert "./venv/bin/localize check --config config.yaml" in guide
+    assert "./venv/bin/localize run --dry-run --config config.yaml" in guide
+    assert "\nlocalize check --config config.yaml" not in guide
     assert "dry-run: true" in guide
     assert "OPENAI_API_KEY" in guide
     assert "process-all-files: true" in guide

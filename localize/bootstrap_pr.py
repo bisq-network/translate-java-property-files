@@ -249,8 +249,8 @@ and the team explicitly enables translation writes.
 ```bash
 python3 -m venv venv
 ./venv/bin/pip install localize-pipeline
-localize check --config {config_path}
-localize run --dry-run --config {config_path}
+./venv/bin/localize check --config {config_path}
+./venv/bin/localize run --dry-run --config {config_path}
 ```
 
 ## Enable The GitHub Action

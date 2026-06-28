@@ -20,6 +20,7 @@ from localize.formats import list_localization_adapters, list_localization_forma
 from localize.init_config import main as init_config_main
 from localize.plugins import load_plugins
 from localize.translation_memory import (
+    load_translation_memory_strict,
     load_translation_memory,
     merge_translation_memory,
     translation_memory_suggestions,
@@ -181,7 +182,11 @@ def _print_memory_stats(args: argparse.Namespace) -> int:
 
 
 def _cmd_memory_export(args: argparse.Namespace) -> int:
-    memory = load_translation_memory(args.memory_file)
+    try:
+        memory = load_translation_memory_strict(args.memory_file, require_exists=True)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     try:
         write_translation_memory(args.output, memory)
     except OSError as exc:
@@ -192,8 +197,12 @@ def _cmd_memory_export(args: argparse.Namespace) -> int:
 
 
 def _cmd_memory_import(args: argparse.Namespace) -> int:
-    target = load_translation_memory(args.memory_file)
-    incoming = load_translation_memory(args.input)
+    try:
+        target = load_translation_memory_strict(args.memory_file)
+        incoming = load_translation_memory_strict(args.input, require_exists=True)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     result = merge_translation_memory(target, incoming)
     try:
         write_translation_memory(args.memory_file, target)
@@ -210,7 +219,11 @@ def _cmd_memory_import(args: argparse.Namespace) -> int:
 
 
 def _cmd_memory_promote(args: argparse.Namespace) -> int:
-    memory = load_translation_memory(args.memory_file)
+    try:
+        memory = load_translation_memory_strict(args.memory_file)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     memory.record(
         args.source_text,
         args.target_text,
@@ -227,7 +240,11 @@ def _cmd_memory_promote(args: argparse.Namespace) -> int:
 
 
 def _cmd_memory_suggest(args: argparse.Namespace) -> int:
-    memory = load_translation_memory(args.memory_file)
+    try:
+        memory = load_translation_memory_strict(args.memory_file)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     suggestions = translation_memory_suggestions(
         memory,
         args.source_text,
@@ -242,6 +259,16 @@ def _cmd_memory_suggest(args: argparse.Namespace) -> int:
             f"{suggestion.source_text}\t{suggestion.target_text}"
         )
     return 0
+
+
+def _non_negative_int(raw_value: str) -> int:
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("expected a non-negative integer") from exc
+    if value < 0:
+        raise argparse.ArgumentTypeError("expected a non-negative integer")
+    return value
 
 
 def _extract_plugin_args(raw_argv: Sequence[str]) -> tuple[list[str], list[str]]:
@@ -425,7 +452,7 @@ def _build_parser() -> argparse.ArgumentParser:
     memory_suggest.add_argument("--locale", required=True, help="Target locale code.")
     memory_suggest.add_argument("--format-id", required=True, help="Localization format id.")
     memory_suggest.add_argument("--min-score", type=float, default=0.72, help="Minimum fuzzy match score.")
-    memory_suggest.add_argument("--limit", type=int, default=5, help="Maximum suggestions to print.")
+    memory_suggest.add_argument("--limit", type=_non_negative_int, default=5, help="Maximum suggestions to print.")
     memory_suggest.set_defaults(func=_cmd_memory_suggest)
 
     return parser
