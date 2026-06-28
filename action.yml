@@ -25,6 +25,14 @@ inputs:
     description: "Override the holistic-review model (maps to REVIEW_MODEL_NAME)."
     required: false
     default: ""
+  plugin-modules:
+    description: "Comma-separated localize plugin modules to import before check/run."
+    required: false
+    default: ""
+  plugin-install-command:
+    description: "Optional shell command to install custom adapter packages before check/run."
+    required: false
+    default: ""
   diff-base:
     description: >-
       Git ref to detect changed source strings against (e.g. the push/PR base). The
@@ -78,6 +86,15 @@ runs:
       shell: bash
       run: pip install -r "${{ github.action_path }}/requirements.txt"
 
+    - name: Install plugin dependencies
+      if: ${{ inputs.plugin-install-command != '' }}
+      shell: bash
+      env:
+        PLUGIN_INSTALL_COMMAND: ${{ inputs.plugin-install-command }}
+      run: |
+        set -euo pipefail
+        bash -lc "$PLUGIN_INSTALL_COMMAND"
+
     - name: Check localization setup
       shell: bash
       working-directory: ${{ github.workspace }}
@@ -88,6 +105,7 @@ runs:
         OPENAI_BASE_URL: ${{ inputs.api-base-url }}
         REVIEW_MODEL_NAME: ${{ inputs.review-model }}
         LOCALIZE_DRY_RUN: ${{ inputs.dry-run }}
+        LOCALIZE_PLUGIN_MODULES: ${{ inputs.plugin-modules }}
       run: |
         set -euo pipefail
         python -m localize.cli check --config "$TRANSLATOR_CONFIG_FILE"
@@ -104,6 +122,7 @@ runs:
         PROCESS_ALL_FILES: ${{ inputs.process-all-files }}
         DIFF_BASE_INPUT: ${{ inputs.diff-base }}
         LOCALIZE_DRY_RUN: ${{ inputs.dry-run }}
+        LOCALIZE_PLUGIN_MODULES: ${{ inputs.plugin-modules }}
       run: |
         set -euo pipefail
         # An all-zero SHA (first push to a branch) is not a valid diff base; fall back

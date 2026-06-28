@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib
+import json
 import os
 import subprocess
 import sys
@@ -18,6 +19,12 @@ from localize.bootstrap_pr import BootstrapPrOptions, create_bootstrap_pr
 from localize.formats import list_localization_adapters, list_localization_formats
 from localize.init_config import main as init_config_main
 from localize.plugins import load_plugins
+from localize.translation_memory import (
+    load_translation_memory,
+    merge_translation_memory,
+    translation_memory_suggestions,
+    write_translation_memory,
+)
 
 
 def _load_config_file(config_path: Path) -> dict[str, Any]:
@@ -132,6 +139,9 @@ def _cmd_bootstrap_pr(args: argparse.Namespace) -> int:
                 action_ref=args.action_ref,
                 overwrite=args.overwrite,
                 reset_branch=args.reset_branch,
+                onboarding_guide_path=None if args.skip_onboarding_guide else args.onboarding_guide_file,
+                plugin_modules=tuple(args.plugin_module),
+                plugin_install_command=args.plugin_install_command,
                 push=args.push,
                 open_pr=args.open_pr,
             )
@@ -146,6 +156,91 @@ def _cmd_bootstrap_pr(args: argparse.Namespace) -> int:
         print("Pushed onboarding branch")
     else:
         print("Review the branch, then push/open a pull request when ready")
+    return 0
+
+
+def _print_memory_stats(args: argparse.Namespace) -> int:
+    memory = load_translation_memory(args.memory_file)
+    stats = memory.stats()
+    if args.output_format == "json":
+        print(json.dumps({
+            "total_entries": stats.total_entries,
+            "active_entries": stats.active_entries,
+            "conflict_entries": stats.conflict_entries,
+            "locales": list(stats.locales),
+            "formats": list(stats.formats),
+        }, ensure_ascii=False, sort_keys=True))
+        return 0
+
+    print(f"total_entries: {stats.total_entries}")
+    print(f"active_entries: {stats.active_entries}")
+    print(f"conflict_entries: {stats.conflict_entries}")
+    print(f"locales: {', '.join(stats.locales) if stats.locales else '-'}")
+    print(f"formats: {', '.join(stats.formats) if stats.formats else '-'}")
+    return 0
+
+
+def _cmd_memory_export(args: argparse.Namespace) -> int:
+    memory = load_translation_memory(args.memory_file)
+    try:
+        write_translation_memory(args.output, memory)
+    except OSError as exc:
+        print(f"error: could not export translation memory: {exc}", file=sys.stderr)
+        return 1
+    print(f"Exported {memory.stats().total_entries} translation memory entries to {args.output}")
+    return 0
+
+
+def _cmd_memory_import(args: argparse.Namespace) -> int:
+    target = load_translation_memory(args.memory_file)
+    incoming = load_translation_memory(args.input)
+    result = merge_translation_memory(target, incoming)
+    try:
+        write_translation_memory(args.memory_file, target)
+    except OSError as exc:
+        print(f"error: could not import translation memory: {exc}", file=sys.stderr)
+        return 1
+    print(
+        "Imported translation memory: "
+        f"imported={result.imported_entries} "
+        f"unchanged={result.unchanged_entries} "
+        f"conflicts={result.conflict_entries}"
+    )
+    return 0
+
+
+def _cmd_memory_promote(args: argparse.Namespace) -> int:
+    memory = load_translation_memory(args.memory_file)
+    memory.record(
+        args.source_text,
+        args.target_text,
+        locale=args.locale,
+        format_id=args.format_id,
+    )
+    try:
+        write_translation_memory(args.memory_file, memory)
+    except OSError as exc:
+        print(f"error: could not promote translation memory entry: {exc}", file=sys.stderr)
+        return 1
+    print("Promoted translation memory entry")
+    return 0
+
+
+def _cmd_memory_suggest(args: argparse.Namespace) -> int:
+    memory = load_translation_memory(args.memory_file)
+    suggestions = translation_memory_suggestions(
+        memory,
+        args.source_text,
+        locale=args.locale,
+        format_id=args.format_id,
+        min_score=args.min_score,
+        limit=args.limit,
+    )
+    for suggestion in suggestions:
+        print(
+            f"{suggestion.score:.3f}\t{suggestion.locale}\t{suggestion.format_id}\t"
+            f"{suggestion.source_text}\t{suggestion.target_text}"
+        )
     return 0
 
 
@@ -256,6 +351,27 @@ def _build_parser() -> argparse.ArgumentParser:
     bootstrap_parser.add_argument("--branch", default="localize/onboarding", help="Onboarding branch name.")
     bootstrap_parser.add_argument("--base-branch", default=None, help="Optional base branch to check out first.")
     bootstrap_parser.add_argument("--action-ref", default="v0.1.0", help="Action ref to use in the generated workflow.")
+    bootstrap_parser.add_argument(
+        "--onboarding-guide-file",
+        default="docs/localize-pipeline.md",
+        help="Target-repo onboarding guide to create.",
+    )
+    bootstrap_parser.add_argument(
+        "--skip-onboarding-guide",
+        action="store_true",
+        help="Do not create a target-repo onboarding guide.",
+    )
+    bootstrap_parser.add_argument(
+        "--plugin-module",
+        action="append",
+        default=[],
+        help="Plugin module to load in the generated GitHub Action workflow. Repeatable.",
+    )
+    bootstrap_parser.add_argument(
+        "--plugin-install-command",
+        default=None,
+        help="Optional shell command that installs custom adapter dependencies in the generated workflow.",
+    )
     bootstrap_parser.add_argument("--overwrite", action="store_true", help="Replace existing onboarding files.")
     bootstrap_parser.add_argument(
         "--reset-branch",
@@ -265,6 +381,52 @@ def _build_parser() -> argparse.ArgumentParser:
     bootstrap_parser.add_argument("--push", action="store_true", help="Push the onboarding branch to origin.")
     bootstrap_parser.add_argument("--open-pr", action="store_true", help="Push and open the onboarding PR with gh.")
     bootstrap_parser.set_defaults(func=_cmd_bootstrap_pr)
+
+    memory_parser = subparsers.add_parser(
+        "memory",
+        help="Inspect, import, export, and promote translation-memory entries.",
+    )
+    memory_subparsers = memory_parser.add_subparsers(dest="memory_command", required=True)
+
+    memory_stats = memory_subparsers.add_parser("stats", help="Print translation-memory statistics.")
+    memory_stats.add_argument("--memory-file", default="logs/translation_memory.json", help="Memory file to inspect.")
+    memory_stats.add_argument(
+        "--output-format",
+        choices=("text", "json"),
+        default="text",
+        help="Stats output format.",
+    )
+    memory_stats.set_defaults(func=_print_memory_stats)
+
+    memory_export = memory_subparsers.add_parser("export", help="Export a translation-memory file.")
+    memory_export.add_argument("--memory-file", default="logs/translation_memory.json", help="Memory file to export.")
+    memory_export.add_argument("--output", required=True, help="Destination memory JSON file.")
+    memory_export.set_defaults(func=_cmd_memory_export)
+
+    memory_import = memory_subparsers.add_parser("import", help="Merge an exported memory into a memory file.")
+    memory_import.add_argument("--memory-file", default="logs/translation_memory.json", help="Target memory file.")
+    memory_import.add_argument("--input", required=True, help="Source memory JSON file to import.")
+    memory_import.set_defaults(func=_cmd_memory_import)
+
+    memory_promote = memory_subparsers.add_parser("promote", help="Record one reviewed translation-memory entry.")
+    memory_promote.add_argument("--memory-file", default="logs/translation_memory.json", help="Target memory file.")
+    memory_promote.add_argument("--source-text", required=True, help="Reviewed source text.")
+    memory_promote.add_argument("--target-text", required=True, help="Reviewed target translation.")
+    memory_promote.add_argument("--locale", required=True, help="Target locale code.")
+    memory_promote.add_argument("--format-id", required=True, help="Localization format id.")
+    memory_promote.set_defaults(func=_cmd_memory_promote)
+
+    memory_suggest = memory_subparsers.add_parser(
+        "suggest",
+        help="Show fuzzy memory candidates for human review without automatic reuse.",
+    )
+    memory_suggest.add_argument("--memory-file", default="logs/translation_memory.json", help="Memory file.")
+    memory_suggest.add_argument("--source-text", required=True, help="Source text to match.")
+    memory_suggest.add_argument("--locale", required=True, help="Target locale code.")
+    memory_suggest.add_argument("--format-id", required=True, help="Localization format id.")
+    memory_suggest.add_argument("--min-score", type=float, default=0.72, help="Minimum fuzzy match score.")
+    memory_suggest.add_argument("--limit", type=int, default=5, help="Maximum suggestions to print.")
+    memory_suggest.set_defaults(func=_cmd_memory_suggest)
 
     return parser
 

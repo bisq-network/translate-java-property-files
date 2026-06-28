@@ -40,6 +40,7 @@ def test_translate_step_wires_provider_and_process_all_env(action):
     assert env["OPENAI_BASE_URL"] == "${{ inputs.api-base-url }}"
     assert env["PROCESS_ALL_FILES"] == "${{ inputs.process-all-files }}"
     assert env["LOCALIZE_DRY_RUN"] == "${{ inputs.dry-run }}"
+    assert env["LOCALIZE_PLUGIN_MODULES"] == "${{ inputs.plugin-modules }}"
     assert 'python -m localize.cli run --config "$TRANSLATOR_CONFIG_FILE"' in translate["run"]
 
 
@@ -50,7 +51,25 @@ def test_action_runs_preflight_check_before_translation(action):
     assert preflight_index < translate_index
     assert steps[preflight_index]["env"]["OPENAI_BASE_URL"] == "${{ inputs.api-base-url }}"
     assert steps[preflight_index]["env"]["REVIEW_MODEL_NAME"] == "${{ inputs.review-model }}"
+    assert steps[preflight_index]["env"]["LOCALIZE_PLUGIN_MODULES"] == "${{ inputs.plugin-modules }}"
     assert 'python -m localize.cli check --config "$TRANSLATOR_CONFIG_FILE"' in steps[preflight_index]["run"]
+
+
+def test_action_has_first_class_plugin_install_and_module_inputs(action):
+    inputs = action["inputs"]
+    assert inputs["plugin-modules"]["default"] == ""
+    assert inputs["plugin-install-command"]["default"] == ""
+
+    steps = action["runs"]["steps"]
+    dependency_index = next(i for i, step in enumerate(steps) if step["name"] == "Install pipeline dependencies")
+    plugin_index = next(i for i, step in enumerate(steps) if step["name"] == "Install plugin dependencies")
+    preflight_index = next(i for i, step in enumerate(steps) if step["name"] == "Check localization setup")
+
+    assert dependency_index < plugin_index < preflight_index
+    plugin_step = steps[plugin_index]
+    assert "plugin-install-command" in plugin_step["if"]
+    assert plugin_step["env"]["PLUGIN_INSTALL_COMMAND"] == "${{ inputs.plugin-install-command }}"
+    assert 'bash -lc "$PLUGIN_INSTALL_COMMAND"' in plugin_step["run"]
 
 
 def test_incremental_by_default_via_diff_base(action):

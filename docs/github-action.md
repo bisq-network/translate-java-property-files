@@ -101,6 +101,24 @@ AISuite is the default provider abstraction. Bare names such as `gpt-4o-mini`
 are treated as OpenAI models. Explicit names such as `openai:gpt-4o-mini` are
 also accepted.
 
+## Custom Format Plugins
+
+For custom adapters, install the package and list the adapter modules with the
+first-class plugin inputs:
+
+```yaml
+      - uses: bisq-network/translate-java-property-files@v0.1.0
+        with:
+          config-file: config.yaml
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          plugin-install-command: python -m pip install .
+          plugin-modules: my_project.localize_adapter
+```
+
+`plugin-install-command` runs after the pipeline dependencies are installed.
+`plugin-modules` maps to `LOCALIZE_PLUGIN_MODULES`, so the same adapter loading
+path is used by local CLI runs and the Action.
+
 ## Pull Request Events
 
 For `pull_request` workflows, set `diff-base` to the PR base SHA:
@@ -132,6 +150,8 @@ jobs:
 | `openai-api-key` | empty | OpenAI key. Omit for keyless local endpoints. |
 | `api-base-url` | empty | OpenAI-compatible endpoint. Overrides config. |
 | `review-model` | empty | Override the holistic-review model. |
+| `plugin-modules` | empty | Comma-separated plugin modules to load before check/run. |
+| `plugin-install-command` | empty | Shell command to install custom adapter packages before check/run. |
 | `diff-base` | `${{ github.event.before }}` | Ref used for changed-string detection. |
 | `process-all-files` | `false` | Translate all target files. Use for backfills. |
 | `dry-run` | `false` | Preview discovery and validation without model calls or translation writes. |
@@ -162,6 +182,6 @@ use it only when that is intentional.
 ## Custom Formats
 
 The action includes built-in Java `.properties` and JSON adapters. For custom
-adapters, publish a small wrapper action or install step that places your adapter
-package on `PYTHONPATH` and exposes a `localize.format_adapters` entry point.
-Then reference that adapter id in `config.yaml`.
+adapters, use `plugin-install-command` and `plugin-modules`, or publish a package
+that exposes a `localize.format_adapters` entry point. Then reference that adapter
+id in `config.yaml`.

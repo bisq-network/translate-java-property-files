@@ -8,6 +8,7 @@ import yaml
 
 from localize import cli
 from localize.formats import unregister_localization_adapter
+from localize.translation_memory import TranslationMemory, load_translation_memory, save_translation_memory
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -314,6 +315,10 @@ def test_cli_bootstrap_pr_delegates_to_onboarding_generator(capsys):
             "i18n",
             "--action-ref",
             "v0.1.0",
+            "--plugin-module",
+            "target_repo.localize_adapter",
+            "--plugin-install-command",
+            "python -m pip install .",
         ])
 
     captured = capsys.readouterr()
@@ -322,7 +327,49 @@ def test_cli_bootstrap_pr_delegates_to_onboarding_generator(capsys):
     assert options.target_project_root == "/repo"
     assert options.input_folder == "i18n"
     assert options.action_ref == "v0.1.0"
+    assert options.plugin_modules == ("target_repo.localize_adapter",)
+    assert options.plugin_install_command == "python -m pip install ."
     assert "Created onboarding commit abc123" in captured.out
+
+
+def test_cli_memory_import_export_stats_and_suggest(tmp_path, capsys):
+    source = tmp_path / "source-memory.json"
+    destination = tmp_path / "destination-memory.json"
+    exported = tmp_path / "exported-memory.json"
+
+    memory = TranslationMemory()
+    memory.record("Save changes", "Änderungen speichern", locale="de", format_id="json")
+    save_translation_memory(source, memory)
+
+    assert cli.main(["memory", "export", "--memory-file", str(source), "--output", str(exported)]) == 0
+    assert exported.exists()
+
+    assert cli.main(["memory", "import", "--memory-file", str(destination), "--input", str(exported)]) == 0
+    imported = load_translation_memory(destination)
+    assert imported.lookup("Save changes", locale="de", format_id="json") == "Änderungen speichern"
+
+    assert cli.main(["memory", "stats", "--memory-file", str(destination)]) == 0
+    stats_output = capsys.readouterr().out
+    assert "active_entries: 1" in stats_output
+    assert "locales: de" in stats_output
+
+    assert cli.main([
+        "memory",
+        "suggest",
+        "--memory-file",
+        str(destination),
+        "--source-text",
+        "Save change",
+        "--locale",
+        "de",
+        "--format-id",
+        "json",
+        "--min-score",
+        "0.75",
+    ]) == 0
+    suggestions = capsys.readouterr().out
+    assert "Save changes" in suggestions
+    assert "Änderungen speichern" in suggestions
 
 
 def test_pyproject_exposes_localize_console_script():

@@ -52,6 +52,7 @@ def test_bootstrap_pr_creates_onboarding_branch_commit_and_files(tmp_path):
         "config.yaml",
         "glossary.json",
         ".github/workflows/translate.yml",
+        "docs/localize-pipeline.md",
     )
 
     config = yaml.safe_load((repo / "config.yaml").read_text(encoding="utf-8"))
@@ -67,6 +68,12 @@ def test_bootstrap_pr_creates_onboarding_branch_commit_and_files(tmp_path):
 
     glossary = yaml.safe_load((repo / "glossary.json").read_text(encoding="utf-8"))
     assert isinstance(glossary, dict)
+
+    guide = (repo / "docs/localize-pipeline.md").read_text(encoding="utf-8")
+    assert "localize check --config config.yaml" in guide
+    assert "dry-run: true" in guide
+    assert "OPENAI_API_KEY" in guide
+    assert "process-all-files: true" in guide
 
 
 def test_bootstrap_pr_refuses_dirty_repo(tmp_path):
@@ -134,6 +141,29 @@ def test_bootstrap_pr_uses_custom_config_path_in_workflow(tmp_path):
 
     workflow = (repo / ".github/workflows/translate.yml").read_text(encoding="utf-8")
     assert "config-file: .localize/config.yaml" in workflow
+
+
+def test_bootstrap_pr_generates_plugin_aware_workflow_and_guide(tmp_path):
+    repo = tmp_path / "target"
+    _init_repo(repo)
+
+    create_bootstrap_pr(
+        BootstrapPrOptions(
+            target_project_root=repo,
+            branch_name="localize/plugin-onboarding",
+            plugin_modules=("target_repo.localize_adapter",),
+            plugin_install_command="python -m pip install .",
+        )
+    )
+
+    workflow = (repo / ".github/workflows/translate.yml").read_text(encoding="utf-8")
+    assert "plugin-modules: target_repo.localize_adapter" in workflow
+    assert "plugin-install-command: |" in workflow
+    assert "python -m pip install ." in workflow
+
+    guide = (repo / "docs/localize-pipeline.md").read_text(encoding="utf-8")
+    assert "target_repo.localize_adapter" in guide
+    assert "python -m pip install ." in guide
 
 
 def test_bootstrap_pr_threads_base_branch_into_workflow(tmp_path):

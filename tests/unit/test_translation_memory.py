@@ -1,6 +1,12 @@
 import json
 
-from localize.translation_memory import TranslationMemory, load_translation_memory, save_translation_memory
+from localize.translation_memory import (
+    TranslationMemory,
+    load_translation_memory,
+    merge_translation_memory,
+    save_translation_memory,
+    translation_memory_suggestions,
+)
 from localize.translate_localization_files import apply_translation_memory
 
 
@@ -60,6 +66,55 @@ def test_save_translation_memory_is_best_effort(monkeypatch, tmp_path):
     monkeypatch.setattr("pathlib.Path.write_text", fail_write)
 
     save_translation_memory(tmp_path / "translation_memory.json", memory)
+
+
+def test_translation_memory_stats_counts_active_conflict_locale_and_format():
+    memory = TranslationMemory()
+    memory.record("Save", "Speichern", locale="de", format_id="json")
+    memory.record("Open", "Öffnen", locale="de", format_id="java_properties")
+    memory.record("Open", "Offen", locale="de", format_id="java_properties")
+
+    stats = memory.stats()
+
+    assert stats.total_entries == 2
+    assert stats.active_entries == 1
+    assert stats.conflict_entries == 1
+    assert stats.locales == ("de",)
+    assert stats.formats == ("java_properties", "json")
+
+
+def test_merge_translation_memory_imports_entries_and_marks_conflicts():
+    base = TranslationMemory()
+    incoming = TranslationMemory()
+    base.record("Save", "Speichern", locale="de", format_id="json")
+    incoming.record("Cancel", "Abbrechen", locale="de", format_id="json")
+    incoming.record("Save", "Sichern", locale="de", format_id="json")
+
+    result = merge_translation_memory(base, incoming)
+
+    assert result.imported_entries == 1
+    assert result.conflict_entries == 1
+    assert base.lookup("Cancel", locale="de", format_id="json") == "Abbrechen"
+    assert base.lookup("Save", locale="de", format_id="json") is None
+
+
+def test_translation_memory_suggestions_are_fuzzy_but_not_automatic_reuse():
+    memory = TranslationMemory()
+    memory.record("Save changes", "Änderungen speichern", locale="de", format_id="json")
+    memory.record("Delete account", "Konto löschen", locale="de", format_id="json")
+
+    suggestions = translation_memory_suggestions(
+        memory,
+        "Save change",
+        locale="de",
+        format_id="json",
+        min_score=0.75,
+    )
+
+    assert suggestions[0].source_text == "Save changes"
+    assert suggestions[0].target_text == "Änderungen speichern"
+    assert suggestions[0].score < 1.0
+    assert memory.lookup("Save change", locale="de", format_id="json") is None
 
 
 def test_apply_translation_memory_splits_hits_from_model_work():
