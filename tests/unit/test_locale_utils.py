@@ -25,6 +25,9 @@ class TestExtractLocaleSuffix:
         # 'test' is 4 lowercase letters -> not a valid 2-3 char language code
         assert extract_locale_suffix("app_test.properties") is None
 
+    def test_source_filename_with_three_letter_suffix_is_none(self):
+        assert extract_locale_suffix("mu_sig.properties") is None
+
 
 class TestIsLocaleFile:
     def test_true_for_locale_file(self):
