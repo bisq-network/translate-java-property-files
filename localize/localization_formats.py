@@ -15,6 +15,7 @@ from typing import Any, Dict, Mapping, Optional
 
 
 _BCP47_LOCALE_CODE = r"[a-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*"
+_JAVA_PROPERTIES_LOCALE_CODE = r"(?:[a-z]{2}(?:[-_][A-Za-z0-9]{2,8})*|pcm)"
 
 
 @dataclass(frozen=True)
@@ -108,7 +109,7 @@ JAVA_PROPERTIES_FORMAT = LocalizationFormat(
     display_name="Java .properties",
     file_extension=".properties",
     code_fence="properties",
-    locale_suffix_regex=rf".*_({_BCP47_LOCALE_CODE})\.properties$",
+    locale_suffix_regex=rf".*_({_JAVA_PROPERTIES_LOCALE_CODE})\.properties$",
 )
 
 JSON_FORMAT = LocalizationFormat(

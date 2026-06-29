@@ -152,6 +152,17 @@ class TestDetectProjectLayout:
         codes = [loc["code"] for loc in detect_locales(str(tmp_path), source_locale="en")]
         assert codes == ["de"]
 
+    def test_ignores_source_filenames_with_locale_like_underscores(self, tmp_path):
+        _make_props(str(tmp_path), [
+            "mu_sig.properties",
+            "account.properties",
+            "account_de.properties",
+        ])
+
+        codes = [loc["code"] for loc in detect_locales(str(tmp_path), source_locale="en")]
+
+        assert codes == ["de"]
+
     def test_detects_json_locale_suffixes_when_requested(self, tmp_path):
         _make_json(str(tmp_path), [
             "app.json", "app_en.json", "app_de.json", "messages.pt-BR.json", "messages.es-419.json",
