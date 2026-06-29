@@ -38,6 +38,13 @@ def test_env_example_documents_max_files_per_pr_override():
     assert "MAX_FILES_PER_PR=150" in env_example
 
 
+def test_health_check_reads_github_token_from_main_or_mobile_install():
+    script = (REPO_ROOT / "scripts" / "check-translation-services.sh").read_text()
+
+    assert 'for env_file in "$INSTALL_ROOT/docker/.env" "$MOBILE_INSTALL_ROOT/docker/.env"' in script
+    assert 'if [ -z "$GITHUB_TOKEN" ] && [ -f "$env_file" ]; then' in script
+
+
 def test_generated_prs_publish_translation_quality_gate_status():
     script = (REPO_ROOT / "update-translations.sh").read_text()
 
@@ -71,7 +78,7 @@ def test_fork_repo_name_short_strips_git_suffix_before_status_api():
 def test_config_file_is_normalized_before_late_quality_gate_call():
     script = (REPO_ROOT / "update-translations.sh").read_text()
 
-    normalize_index = script.index("resolve_config_file")
+    normalize_index = script.index('resolve_config_file\nlog "Using configuration file')
     quality_gate_index = script.index("localize.translation_quality_gate")
 
     assert normalize_index < quality_gate_index
@@ -90,7 +97,7 @@ def test_validation_summary_is_reset_before_translation_script_runs():
 def test_smoke_only_mode_runs_before_pending_pr_guard():
     script = (REPO_ROOT / "update-translations.sh").read_text()
 
-    smoke_index = script.index("LOCALIZE_SMOKE_ONLY")
+    smoke_index = script.index("\nrun_smoke_only_if_requested\n")
     pending_guard_index = script.index("Checking for manually-blocked PRs")
 
     assert "run_smoke_only_if_requested()" in script
@@ -103,7 +110,9 @@ def test_script_emits_structured_pipeline_events_for_monitoring():
     script = (REPO_ROOT / "update-translations.sh").read_text()
 
     assert "record_pipeline_event()" in script
-    assert "PIPELINE_EVENT event=$event" in script
+    assert 'payload="{\\"event\\":$(record_pipeline_event_field "$event")"' in script
+    assert 'log "PIPELINE_EVENT $payload"' in script
+    assert "record_pipeline_event_field()" in script
     assert 'record_pipeline_event "pending_pr_guard"' in script
     assert 'record_pipeline_event "source_files_detected"' in script
     assert 'record_pipeline_event "translation_files_detected"' in script

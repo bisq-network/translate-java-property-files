@@ -72,7 +72,7 @@ def test_docs_and_metadata_use_localize_pipeline_repo_name():
         PROJECT_ROOT / "README.md",
         PROJECT_ROOT / "pyproject.toml",
         PROJECT_ROOT / "action.yml",
-        *sorted((PROJECT_ROOT / "docs").glob("*.md")),
+        *sorted((PROJECT_ROOT / "docs").rglob("*.md")),
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 

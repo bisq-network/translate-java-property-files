@@ -369,6 +369,19 @@ async def test_semantic_reviewer_auto_applies_safe_error_suggestions(tmp_path):
                                         "severity": "error",
                                         "reason": "Placeholder missing.",
                                         "suggested_value": "Hallo {0}",
+                                    },
+                                    {
+                                        "file": "messages_de.properties",
+                                        "key": "hello",
+                                        "severity": "error",
+                                        "reason": "Conflicting duplicate.",
+                                        "suggested_value": "Guten Tag {0}",
+                                    },
+                                    {
+                                        "file": "messages_de.properties",
+                                        "key": "hello",
+                                        "severity": "warning",
+                                        "reason": "Tone is informal.",
                                     }
                                 ]
                             }
@@ -420,8 +433,12 @@ async def test_semantic_reviewer_auto_applies_safe_error_suggestions(tmp_path):
     assert exit_code == 0
     assert "hello=Hallo {0}" in target_path.read_text(encoding="utf-8")
     summary = json.loads(validation_summary_path.read_text(encoding="utf-8"))
-    assert summary["semantic_review_findings"] == []
+    assert [finding["reason"] for finding in summary["semantic_review_findings"]] == [
+        "Conflicting duplicate.",
+        "Tone is informal.",
+    ]
     assert summary["semantic_review_remediations"][0]["key"] == "hello"
+    assert summary["semantic_review_remediation_skips"][0]["reason"] == "duplicate finding for changed entry"
 
 
 @pytest.mark.asyncio

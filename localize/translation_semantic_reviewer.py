@@ -28,6 +28,7 @@ from localize.semantic_quality import (
 from localize.semantic_remediation import (
     SemanticRemediationResult,
     apply_semantic_review_suggestions,
+    semantic_review_finding_signature,
 )
 from localize.translation_quality_gate import get_staged_diff, load_quality_gate_localization_profiles
 
@@ -328,19 +329,24 @@ async def _run(argv: Optional[Sequence[str]]) -> int:
         )
 
     if _auto_apply_suggestions_enabled(config, semantic_review_config):
+        changed_identities = {
+            (change.file, change.key)
+            for change in changes
+        }
         remediation = apply_semantic_review_suggestions(
             repo_root=args.repo_root,
             input_folder=args.input_folder,
             findings=findings,
             locale_codes=locales,
             localization_profiles=localization_profiles,
+            changed_identities=changed_identities,
         )
         append_semantic_review_remediations(args.validation_summary, remediation)
-        applied = remediation.applied_identities
+        applied = remediation.applied_finding_signatures
         findings = [
             finding
             for finding in findings
-            if (finding["file"], finding["key"]) not in applied
+            if semantic_review_finding_signature(finding) not in applied
         ]
 
     append_semantic_review_findings(args.validation_summary, findings)

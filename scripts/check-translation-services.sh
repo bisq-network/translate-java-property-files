@@ -18,7 +18,12 @@ if [ ! -d "$MOBILE_INSTALL_ROOT" ] && [ -d "$LEGACY_MOBILE_INSTALL_ROOT" ]; then
     MOBILE_INSTALL_ROOT="$LEGACY_MOBILE_INSTALL_ROOT"
 fi
 
-GITHUB_TOKEN=$(sed -n 's/^GITHUB_TOKEN=//p' "$INSTALL_ROOT/docker/.env" 2>/dev/null | tail -n1 || true)
+GITHUB_TOKEN=""
+for env_file in "$INSTALL_ROOT/docker/.env" "$MOBILE_INSTALL_ROOT/docker/.env"; do
+    if [ -z "$GITHUB_TOKEN" ] && [ -f "$env_file" ]; then
+        GITHUB_TOKEN=$(sed -n 's/^GITHUB_TOKEN=//p' "$env_file" 2>/dev/null | tail -n1 || true)
+    fi
+done
 
 log_alert() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] ALERT: $1" | tee -a "$ALERT_FILE"

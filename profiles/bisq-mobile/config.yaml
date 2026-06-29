@@ -112,7 +112,7 @@ supported_locales:
     name: "Vietnamese"
 style_rules:
   de:
-    - "Use natural mobile labels; prefer 'Haeufige Fragen' over source-identical 'FAQs' when a short native label fits."
+    - "Use natural mobile labels; prefer 'Häufige Fragen' over source-identical 'FAQs' when a short native label fits."
   es:
     - "Keep navigation labels short and fully localized unless the term is a brand name."
   fr:

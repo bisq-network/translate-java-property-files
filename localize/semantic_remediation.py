@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import os
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Mapping, Sequence
+from typing import Any, Dict, Iterable, Mapping, Sequence
 
 from localize.localization_adapters import get_localization_adapter
 from localize.localization_profiles import LocalizationProfile
@@ -37,11 +37,19 @@ class SemanticRemediationResult:
             for item in self.applied
         }
 
+    @property
+    def applied_finding_signatures(self) -> set[str]:
+        return {
+            item["finding_signature"]
+            for item in self.applied
+            if item.get("finding_signature")
+        }
+
 
 def _input_folder_path(repo_root: str, input_folder: str) -> Path:
     path = Path(input_folder).expanduser()
     if path.is_absolute():
-        return path
+        return path.resolve()
     return (Path(repo_root).expanduser() / path).resolve()
 
 
@@ -52,11 +60,36 @@ def _finding_file_path(input_folder: Path, file_name: str) -> Path:
     return input_folder / path
 
 
-def _relative_to_input(path: Path, input_folder: Path) -> str:
+def _resolve_within(base: Path, candidate: Path) -> Path | None:
+    resolved_base = base.resolve()
+    resolved_candidate = candidate.resolve()
     try:
-        return path.relative_to(input_folder).as_posix()
+        resolved_candidate.relative_to(resolved_base)
     except ValueError:
-        return os.path.relpath(path, input_folder)
+        return None
+    return resolved_candidate
+
+
+def semantic_review_finding_signature(
+    finding: Mapping[str, Any],
+    *,
+    file_name: str | None = None,
+    key: str | None = None,
+) -> str:
+    """Return a stable identity for one concrete semantic-review finding."""
+    return json.dumps(
+        [
+            file_name if file_name is not None else str(finding.get("file", "")),
+            key if key is not None else str(finding.get("key", "")),
+            str(finding.get("severity", "")),
+            str(finding.get("reason", "")),
+            str(finding.get("suggested_value", "")),
+            str(finding.get("source", "")),
+            str(finding.get("rule_id", "")),
+        ],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
 
 
 def _matching_profile(
@@ -91,6 +124,7 @@ def apply_semantic_review_suggestions(
     findings: Sequence[Mapping[str, Any]],
     locale_codes: Sequence[str],
     localization_profiles: Sequence[LocalizationProfile],
+    changed_identities: Iterable[tuple[str, str]],
 ) -> SemanticRemediationResult:
     """Apply error-level AI review suggestions that pass deterministic checks.
 
@@ -100,6 +134,8 @@ def apply_semantic_review_suggestions(
     """
     result = SemanticRemediationResult()
     input_path = _input_folder_path(repo_root, input_folder)
+    changed_identity_set = set(changed_identities)
+    seen_candidate_identities: set[tuple[str, str]] = set()
 
     for finding in findings:
         if str(finding.get("severity", "")).lower() != "error":
@@ -115,11 +151,23 @@ def apply_semantic_review_suggestions(
             _skip(result, finding, "missing file or key")
             continue
 
-        target_path = _finding_file_path(input_path, file_name)
+        target_path = _resolve_within(input_path, _finding_file_path(input_path, file_name))
+        if target_path is None:
+            _skip(result, finding, "target file is outside input_folder")
+            continue
         if not target_path.exists():
             _skip(result, finding, "target file not found")
             continue
-        relative_file = _relative_to_input(target_path, input_path)
+        relative_file = target_path.relative_to(input_path).as_posix()
+        identity = (relative_file, key)
+        if identity not in changed_identity_set:
+            _skip(result, finding, "finding is not scoped to a changed entry")
+            continue
+        if identity in seen_candidate_identities:
+            _skip(result, finding, "duplicate finding for changed entry")
+            continue
+        seen_candidate_identities.add(identity)
+
         profile = _matching_profile(relative_file, locale_codes, localization_profiles)
         if profile is None:
             _skip(result, finding, "no configured localization profile matched the target file")
@@ -136,7 +184,10 @@ def apply_semantic_review_suggestions(
             locale_codes,
             profile.localization_format,
         )
-        source_path = input_path / source_rel
+        source_path = _resolve_within(input_path, input_path / source_rel)
+        if source_path is None:
+            _skip(result, finding, "source file is outside input_folder")
+            continue
         if not source_path.exists():
             _skip(result, finding, "source file not found")
             continue
@@ -162,8 +213,17 @@ def apply_semantic_review_suggestions(
         result.applied.append({
             "file": relative_file,
             "key": key,
+            "severity": "error",
+            "reason": str(finding.get("reason", "")),
+            "value": str(finding.get("value", "")),
+            "rule_id": str(finding.get("rule_id", "")),
             "suggested_value": escaped_value,
             "source": str(finding.get("source", "ai-review")),
+            "finding_signature": semantic_review_finding_signature(
+                finding,
+                file_name=relative_file,
+                key=key,
+            ),
         })
 
     return result

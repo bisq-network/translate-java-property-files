@@ -64,7 +64,24 @@ log_cmd() {
 record_pipeline_event() {
     local event="$1"
     shift || true
-    log "PIPELINE_EVENT event=$event $*" "INFO"
+    local payload
+    payload="{\"event\":$(record_pipeline_event_field "$event")"
+    local field key value
+    for field in "$@"; do
+        key="${field%%=*}"
+        value="${field#*=}"
+        if [[ -z "$key" || "$key" == "$field" || "$key" =~ [^A-Za-z0-9_] ]]; then
+            key="value"
+            value="$field"
+        fi
+        payload="${payload},\"${key}\":$(record_pipeline_event_field "$value")"
+    done
+    payload="${payload}}"
+    log "PIPELINE_EVENT $payload" "INFO"
+}
+
+record_pipeline_event_field() {
+    python3 -c 'import json, sys; print(json.dumps(sys.argv[1], ensure_ascii=False))' "$1"
 }
 
 command_exists() {
