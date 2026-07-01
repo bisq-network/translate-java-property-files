@@ -120,6 +120,65 @@ def test_source_identical_gate_supports_json_locale_directory_layout(tmp_path):
     ]
 
 
+def test_source_identical_gate_excludes_ignored_json_pointer_keys(tmp_path):
+    repo_root = tmp_path
+    input_folder = repo_root / "locales"
+    _write_json(
+        input_folder / "en.json",
+        {
+            "#1": "Phrases in basic/Main.tsx",
+            "title": "Open trades",
+        },
+    )
+    _write_json(
+        input_folder / "de.json",
+        {
+            "#1": "Phrases in basic/Main.tsx",
+            "title": "Open trades",
+        },
+    )
+    diff_text = """diff --git a/locales/de.json b/locales/de.json
++++ b/locales/de.json
++  "#1": "Phrases in basic/Main.tsx",
++  "title": "Open trades",
+"""
+
+    stats = analyze_source_identical_changes(
+        diff_text=diff_text,
+        repo_root=str(repo_root),
+        input_folder=str(input_folder),
+        locale_codes=["de"],
+        brand_glossary=[],
+        localization_format=JSON_FORMAT,
+        localization_layout=LocalizationLayout(id="locale_filename", source_locale="en"),
+        ignore_key_patterns=[r"^/#\d+$"],
+    )
+
+    assert stats.changed_entries_count == 1
+    assert stats.source_identical_count == 1
+    assert stats.unexpected_source_identical_count == 1
+    assert stats.examples == [
+        {"file": "de.json", "key": "/title", "value": "Open trades"},
+    ]
+
+
+def test_quality_gate_config_loads_ignore_key_patterns(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "ignore_key_patterns": [r"^/#\d+$"],
+                "supported_locales": [{"code": "de", "name": "German"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config, _locale_codes, _brand_glossary, _rules = load_quality_gate_config(str(config_path))
+
+    assert [pattern.pattern for pattern in config.ignore_key_patterns] == [r"^/#\d+$"]
+
+
 def test_quality_gate_localization_metadata_rejects_invalid_format(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text("localization_format: unknown\n", encoding="utf-8")
