@@ -117,9 +117,11 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 ```
 
-The action translates only files changed since the configured diff base. Use
-`process-all-files: true` once for an initial backfill, then return to
-incremental runs.
+The action translates only files changed since the configured diff base. For a
+new locale, create and review the initial translation locally first, merge that
+baseline, then let the action maintain incremental source-string updates.
+`process-all-files: true` is still available for controlled full scans, but it
+should not be the default operating mode for normal CI.
 
 Before enabling live PR creation in a target repo, add the `OPENAI_API_KEY`
 repository secret and set the repository's Actions workflow permissions to
@@ -350,7 +352,11 @@ Server guide: [docs/new-project-deployment.md](docs/new-project-deployment.md).
 - **Action pushed a branch but failed to create a PR:** enable repository
   Actions workflow write permissions and allow workflow-created pull requests
   in the target repository settings.
-- **Unexpected archive files in a generated PR:** ignore the pipeline archive
+- **Strict signed-commit rules reject generated PRs:** configure SSH commit
+  signing in the action with a dedicated machine-user signing key. See
+  [docs/github-action.md](docs/github-action.md#signed-commits).
+- **Unexpected archive files in a generated PR:** recent action versions exclude
+  archive folders from staging, but you should also ignore the pipeline archive
   folder under your localization input folder, for example
   `/src/main/resources/archive/` for Java `.properties` suffix layouts.
 - **Model parameter errors:** completion-token caps are normalized at the provider

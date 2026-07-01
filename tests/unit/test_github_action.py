@@ -108,3 +108,65 @@ def test_opens_pr_with_gh_cli(action):
     # The PR step is gated on the open-pr input.
     steps = action["runs"]["steps"]
     assert any("open-pr" in str(s.get("if", "")) for s in steps)
+
+
+def test_open_pr_step_supports_optional_ssh_commit_signing(action):
+    inputs = action["inputs"]
+    assert inputs["git-user-name"]["default"] == "github-actions[bot]"
+    assert inputs["git-user-email"]["default"] == "41898282+github-actions[bot]@users.noreply.github.com"
+    assert inputs["commit-signing-method"]["default"] == "none"
+    assert inputs["commit-signing-key"]["default"] == ""
+
+    pr_step = next(step for step in action["runs"]["steps"] if step["name"] == "Open pull request")
+    env = pr_step["env"]
+    assert env["GIT_USER_NAME"] == "${{ inputs.git-user-name }}"
+    assert env["GIT_USER_EMAIL"] == "${{ inputs.git-user-email }}"
+    assert env["COMMIT_SIGNING_METHOD"] == "${{ inputs.commit-signing-method }}"
+    assert env["COMMIT_SIGNING_KEY"] == "${{ inputs.commit-signing-key }}"
+
+    run = pr_step["run"]
+    assert 'case "${COMMIT_SIGNING_METHOD:-none}" in' in run
+    assert "ssh-keygen -y -f \"$signing_key_file\"" in run
+    assert "git config gpg.format ssh" in run
+    assert "git config user.signingkey \"$signing_key_file\"" in run
+    assert "git config commit.gpgsign true" in run
+    assert "commit_args=(-S -m \"$COMMIT_MSG\")" in run
+    assert "trap cleanup_signing_key EXIT" in run
+    assert "git config user.name \"$GIT_USER_NAME\"" in run
+    assert "git config user.email \"$GIT_USER_EMAIL\"" in run
+
+
+def test_open_pr_step_stages_localization_changes_without_archives(action):
+    pr_step = next(step for step in action["runs"]["steps"] if step["name"] == "Open pull request")
+    run = pr_step["run"]
+    assert "target_project_root" in run
+    assert "input_folder" in run
+    assert "stage_roots_file" in run
+    assert "git reset -q" in run
+    assert 'git add -A -- "$stage_root"' in run
+    assert '":(exclude)$stage_root/archive/**"' in run
+    assert '":(exclude,glob)$stage_root/**/archive/**"' in run
+    assert '":(exclude,glob)**/archive/**"' in run
+    assert "No stageable localization changes after excluding archive folders" in run
+
+
+def test_generated_pr_uses_summary_body_and_uploads_artifacts(action):
+    pr_step = next(step for step in action["runs"]["steps"] if step["name"] == "Open pull request")
+    run = pr_step["run"]
+    assert "translation_summary.json" in run
+    assert "translation_validation_summary.json" in run
+    assert "token_usage_summary.json" in run
+    assert "body_file=" in run
+    assert "gh pr create --head \"$branch\" --title \"$PR_TITLE\" --body-file \"$body_file\"" in run
+    assert "gh pr edit \"$branch\" --title \"$PR_TITLE\" --body-file \"$body_file\"" in run
+
+    upload = next(step for step in action["runs"]["steps"] if step["name"] == "Upload run summaries")
+    assert upload["if"] == "${{ always() }}"
+    assert upload["uses"] == "actions/upload-artifact@v4"
+    assert upload["with"]["name"] == "localize-pipeline-summaries"
+    paths = upload["with"]["path"]
+    assert "translation_summary.json" in paths
+    assert "translation_validation_summary.json" in paths
+    assert "token_usage_summary.json" in paths
+    assert "skipped_files_report.log" in paths
+    assert upload["with"]["if-no-files-found"] == "ignore"
