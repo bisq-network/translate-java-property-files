@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable, Pattern, Sequence
+from re import Pattern
+from typing import Iterable, Sequence
 
 
-def compile_ignore_key_patterns(raw_patterns: Iterable[str] | None) -> list[Pattern[str]]:
+def compile_ignore_key_patterns(raw_patterns: Iterable[str | Pattern[str]] | None) -> list[Pattern[str]]:
     """Compile configured ignore-key regexes once at config load.
 
     Patterns are matched against adapter-produced translation keys. JSON adapters
@@ -18,9 +19,12 @@ def compile_ignore_key_patterns(raw_patterns: Iterable[str] | None) -> list[Patt
 
     compiled: list[Pattern[str]] = []
     for raw_pattern in raw_patterns:
+        if isinstance(raw_pattern, Pattern):
+            compiled.append(raw_pattern)
+            continue
         if not isinstance(raw_pattern, str):
             raise ValueError(
-                "ignore_key_patterns entries must be strings; "
+                "ignore_key_patterns entries must be strings or compiled regex patterns; "
                 f"got {type(raw_pattern).__name__}."
             )
         try:

@@ -147,11 +147,7 @@ def analyze_source_identical_changes(
 def _ensure_ignore_key_patterns(
     patterns: Sequence[Pattern[str] | str],
 ) -> List[Pattern[str]]:
-    if not patterns:
-        return []
-    if all(hasattr(pattern, "search") for pattern in patterns):
-        return list(patterns)  # type: ignore[list-item]
-    return compile_ignore_key_patterns(patterns)  # type: ignore[arg-type]
+    return compile_ignore_key_patterns(patterns)
 
 
 def _filter_ignored_changes(

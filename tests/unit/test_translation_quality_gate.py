@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import re
 
 import pytest
 import yaml
@@ -151,7 +152,7 @@ def test_source_identical_gate_excludes_ignored_json_pointer_keys(tmp_path):
         brand_glossary=[],
         localization_format=JSON_FORMAT,
         localization_layout=LocalizationLayout(id="locale_filename", source_locale="en"),
-        ignore_key_patterns=[r"^/#\d+$"],
+        ignore_key_patterns=[re.compile(r"^/#\d+$"), r"^/metadata$"],
     )
 
     assert stats.changed_entries_count == 1

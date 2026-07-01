@@ -1,5 +1,7 @@
 """Tests for configured translation-key ignore patterns."""
 
+import re
+
 import pytest
 
 from localize.ignore_keys import compile_ignore_key_patterns, is_ignored_key
@@ -33,6 +35,17 @@ def test_properties_keys_use_the_adapter_key_verbatim():
 def test_empty_patterns_are_noop():
     assert compile_ignore_key_patterns([]) == []
     assert not is_ignored_key("/#1", [])
+
+
+def test_compiled_patterns_are_passed_through():
+    compiled_pattern = re.compile(r"^/#\d+$")
+
+    patterns = compile_ignore_key_patterns([compiled_pattern, r"^/metadata$"])
+
+    assert patterns[0] is compiled_pattern
+    assert is_ignored_key("/#1", patterns)
+    assert is_ignored_key("/metadata", patterns)
+    assert not is_ignored_key("/title", patterns)
 
 
 def test_invalid_pattern_reports_the_pattern():
