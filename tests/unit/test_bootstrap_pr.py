@@ -75,6 +75,8 @@ def test_bootstrap_pr_creates_onboarding_branch_commit_and_files(tmp_path):
     assert "\nlocalize check --config config.yaml" not in guide
     assert "dry-run: true" in guide
     assert "OPENAI_API_KEY" in guide
+    assert "Create and review any initial locale backfill locally" in guide
+    assert "./venv/bin/localize run --config config.yaml" in guide
     assert "process-all-files: true" in guide
 
 

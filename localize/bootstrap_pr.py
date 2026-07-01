@@ -258,10 +258,13 @@ python3 -m venv venv
 1. Add the `OPENAI_API_KEY` repository secret, or configure `api-base-url` for a
    local OpenAI-compatible endpoint.
 2. Merge this onboarding PR while the workflow still has `dry-run: true`.
-3. Trigger one manual workflow run with `process-all-files: true` for the first
-   backfill.
-4. Review the translation PR.
-5. Set `dry-run: false` for normal incremental translation runs.
+3. Create and review any initial locale backfill locally with
+   `./venv/bin/localize run --config {config_path}`.
+4. Set `dry-run: false` after the local baseline is merged.
+5. Leave `process-all-files` unset for normal incremental translation runs.
+
+Use `process-all-files: true` only for a controlled manual full scan or pilot
+backfill, then return to the default incremental mode.
 
 {plugin_section}## Maintenance
 

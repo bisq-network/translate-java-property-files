@@ -42,7 +42,7 @@ inputs:
   process-all-files:
     description: >-
       Translate ALL locale files instead of only those changed since diff-base. Use
-      true for a one-time initial run; leave false for incremental CI.
+      sparingly for a controlled backfill; leave false for normal incremental CI.
     required: false
     default: "false"
   dry-run:
@@ -65,6 +65,22 @@ inputs:
     description: "Commit message for the translation changes."
     required: false
     default: "Update AI translations"
+  git-user-name:
+    description: "Git user.name used for generated translation commits."
+    required: false
+    default: "github-actions[bot]"
+  git-user-email:
+    description: "Git user.email used for generated translation commits."
+    required: false
+    default: "41898282+github-actions[bot]@users.noreply.github.com"
+  commit-signing-method:
+    description: "Commit signing method. Use 'ssh' with commit-signing-key, or 'none' for unsigned commits."
+    required: false
+    default: "none"
+  commit-signing-key:
+    description: "Private SSH signing key used when commit-signing-method is 'ssh'. Store this as a secret."
+    required: false
+    default: ""
   github-token:
     description: "Token used to push the branch and open the PR."
     required: false
@@ -165,22 +181,226 @@ runs:
         PR_BRANCH: ${{ inputs.pr-branch }}
         COMMIT_MSG: ${{ inputs.commit-message }}
         PR_TITLE: ${{ inputs.pr-title }}
+        GIT_USER_NAME: ${{ inputs.git-user-name }}
+        GIT_USER_EMAIL: ${{ inputs.git-user-email }}
+        COMMIT_SIGNING_METHOD: ${{ inputs.commit-signing-method }}
+        COMMIT_SIGNING_KEY: ${{ inputs.commit-signing-key }}
+        TRANSLATOR_CONFIG_FILE: ${{ github.workspace }}/${{ inputs.config-file }}
+        ACTION_LOG_DIR: ${{ github.action_path }}/logs
       run: |
         set -euo pipefail
         if git diff --quiet && git diff --cached --quiet && [ -z "$(git status --porcelain)" ]; then
           echo "No translation changes; nothing to open a PR for."
           exit 0
         fi
+
+        signing_key_file=""
+        cleanup_signing_key() {
+          if [ -n "${signing_key_file:-}" ]; then
+            rm -f "$signing_key_file"
+          fi
+        }
+        trap cleanup_signing_key EXIT
+
+        commit_args=(-m "$COMMIT_MSG")
+        case "${COMMIT_SIGNING_METHOD:-none}" in
+          ""|"none")
+            git config commit.gpgsign false
+            ;;
+          "ssh")
+            if [ -z "${COMMIT_SIGNING_KEY:-}" ]; then
+              echo "::error::commit-signing-method is 'ssh' but commit-signing-key is empty."
+              exit 1
+            fi
+            signing_key_file="${RUNNER_TEMP:-/tmp}/localize-commit-signing-key"
+            umask 077
+            printf '%s\n' "$COMMIT_SIGNING_KEY" > "$signing_key_file"
+            chmod 600 "$signing_key_file"
+            ssh-keygen -y -f "$signing_key_file" >/dev/null
+            git config gpg.format ssh
+            git config user.signingkey "$signing_key_file"
+            git config commit.gpgsign true
+            commit_args=(-S -m "$COMMIT_MSG")
+            ;;
+          *)
+            echo "::error::Unsupported commit-signing-method '${COMMIT_SIGNING_METHOD}'. Use 'none' or 'ssh'."
+            exit 1
+            ;;
+        esac
+
         branch="$PR_BRANCH"
-        git config user.name "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git config user.name "$GIT_USER_NAME"
+        git config user.email "$GIT_USER_EMAIL"
         git checkout -B "$branch"
-        git add -A
-        git commit -m "$COMMIT_MSG"
+
+        stage_roots_file="${RUNNER_TEMP:-/tmp}/localize-stage-roots.txt"
+        python - <<'PY' > "$stage_roots_file"
+        import os
+        import sys
+        from pathlib import Path
+
+        import yaml
+
+        workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+        config_file = Path(os.environ["TRANSLATOR_CONFIG_FILE"]).resolve()
+        config = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
+
+        target_root = Path(str(config.get("target_project_root") or "."))
+        if not target_root.is_absolute():
+            target_root = workspace / target_root
+        target_root = target_root.resolve()
+
+        input_folder = Path(str(config.get("input_folder") or "."))
+        if not input_folder.is_absolute():
+            input_folder = target_root / input_folder
+        input_folder = input_folder.resolve()
+
+        try:
+            relative = input_folder.relative_to(workspace)
+        except ValueError:
+            print(
+                f"Configured input_folder '{input_folder}' is outside the GitHub workspace '{workspace}'.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        relative_text = relative.as_posix() or "."
+        print(relative_text)
+        PY
+
+        git reset -q
+        while IFS= read -r stage_root; do
+          if [ -z "$stage_root" ]; then
+            continue
+          fi
+          if [ "$stage_root" = "." ]; then
+            git add -A -- . ":(exclude,glob)**/archive/**"
+          else
+            git add -A -- "$stage_root" \
+              ":(exclude)$stage_root/archive/**" \
+              ":(exclude,glob)$stage_root/**/archive/**"
+          fi
+        done < "$stage_roots_file"
+
+        if git diff --cached --quiet; then
+          echo "No stageable localization changes after excluding archive folders; nothing to open a PR for."
+          exit 0
+        fi
+
+        body_file="${RUNNER_TEMP:-/tmp}/localize-pr-body.md"
+        LOCALIZE_PR_BODY_FILE="$body_file" python - <<'PY'
+        import json
+        import os
+        from pathlib import Path
+
+        log_dir = Path(os.environ["ACTION_LOG_DIR"])
+        body_file = Path(os.environ["LOCALIZE_PR_BODY_FILE"])
+
+        def load_json(name):
+            path = log_dir / name
+            if not path.exists():
+                return None
+            with path.open("r", encoding="utf-8") as file:
+                return json.load(file)
+
+        translation = load_json("translation_summary.json") or {}
+        validation = load_json("translation_validation_summary.json") or {}
+        usage = load_json("token_usage_summary.json") or {}
+
+        files_count = translation.get("files_count")
+        if files_count is None:
+            files_count = len(translation.get("processed_files", []))
+        locales = translation.get("locales") or []
+        modules = translation.get("modules") or []
+        new_keys = int(translation.get("new_keys_count") or 0)
+        updated_keys = int(translation.get("updated_keys_count") or 0)
+
+        validation_files = validation.get("files") or {}
+        pipeline_warnings = validation.get("pipeline_warnings") or []
+        if isinstance(validation.get("skipped_files"), dict):
+            pipeline_warnings.extend(
+                {"file": name, "errors": errors}
+                for name, errors in validation["skipped_files"].items()
+            )
+        reverted_keys = sum(
+            int(summary.get("reverted_keys_count") or 0)
+            for summary in validation_files.values()
+            if isinstance(summary, dict)
+        )
+        placeholder_failures = sum(
+            int(summary.get("placeholder_failures_count") or 0)
+            for summary in validation_files.values()
+            if isinstance(summary, dict)
+        )
+        control_findings = sum(
+            int(summary.get("control_character_findings_count") or 0)
+            for summary in validation_files.values()
+            if isinstance(summary, dict)
+        )
+
+        totals = usage.get("totals") or {}
+        calls = totals.get("calls")
+        total_tokens = totals.get("total_tokens")
+        estimated_cost = totals.get("estimated_cost_usd")
+
+        lines = [
+            "Automated translation update from Localize Pipeline.",
+            "",
+            "## Run Summary",
+            f"- Files translated: {files_count}",
+            f"- Locales: {', '.join(f'`{locale}`' for locale in locales) if locales else 'n/a'}",
+            f"- Modules: {', '.join(f'`{module}`' for module in modules) if modules else 'n/a'}",
+            f"- New keys: {new_keys}",
+            f"- Updated keys: {updated_keys}",
+            "",
+            "## Validation",
+            f"- Files with validation summaries: {len(validation_files)}",
+            f"- Reverted keys: {reverted_keys}",
+            f"- Placeholder failures: {placeholder_failures}",
+            f"- Control-character findings: {control_findings}",
+            f"- Pipeline warnings: {len(pipeline_warnings)}",
+            "",
+            "## Token Usage",
+            f"- API calls: {calls if calls is not None else 'n/a'}",
+            f"- Total tokens: {total_tokens if total_tokens is not None else 'n/a'}",
+            f"- Estimated cost: ${estimated_cost:.4f}" if isinstance(estimated_cost, (int, float)) else "- Estimated cost: n/a",
+            "",
+            "Review the changed localization files before merging.",
+            "Detailed JSON summaries are attached to the workflow run when available.",
+        ]
+
+        if pipeline_warnings:
+            lines.extend(["", "## Warnings"])
+            for warning in pipeline_warnings[:10]:
+                if isinstance(warning, dict):
+                    filename = warning.get("file", "unknown")
+                    errors = warning.get("errors", [])
+                    lines.append(f"- `{filename}`: {len(errors)} issue(s)")
+                else:
+                    lines.append(f"- {warning}")
+            if len(pipeline_warnings) > 10:
+                lines.append(f"- ...and {len(pipeline_warnings) - 10} more warning(s)")
+
+        body_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        PY
+
+        git commit "${commit_args[@]}"
         git push --force-with-lease origin "$branch"
         if gh pr view "$branch" >/dev/null 2>&1; then
           echo "Pull request already exists for $branch; it now points at the latest push."
+          gh pr edit "$branch" --title "$PR_TITLE" --body-file "$body_file"
         else
-          gh pr create --head "$branch" --title "$PR_TITLE" \
-            --body "Automated translation update. Review the changed localization files before merging."
+          gh pr create --head "$branch" --title "$PR_TITLE" --body-file "$body_file"
         fi
+
+    - name: Upload run summaries
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: localize-pipeline-summaries
+        path: |
+          ${{ github.action_path }}/logs/translation_summary.json
+          ${{ github.action_path }}/logs/translation_validation_summary.json
+          ${{ github.action_path }}/logs/token_usage_summary.json
+          ${{ github.action_path }}/logs/skipped_files_report.log
+        if-no-files-found: ignore

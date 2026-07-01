@@ -37,6 +37,22 @@ For a no-cost setup preview, add `dry-run: true`. The action still validates the
 config and discovery path, but the runtime skips model calls and translation
 writes.
 
+## Recommended Rollout
+
+Use local runs for the initial locale baseline and use the GitHub Action for
+ongoing source-string updates:
+
+1. Generate or update `config.yaml` and `glossary.json` locally.
+2. Create the initial target locale files locally with `localize run`.
+3. Review and merge that baseline like a normal localization PR.
+4. Enable the action with the default `process-all-files: false`.
+5. Let future CI runs translate only changed strings.
+
+This keeps the largest and riskiest translation review out of unattended CI and
+gives the action a clean baseline for incremental maintenance. For small repos
+or controlled pilot runs, you can still trigger a manual full scan with
+`process-all-files: true`; switch it back to `false` after that run.
+
 ## Target Repository Settings
 
 Before live runs can open translation PRs, configure the target repository:
@@ -57,23 +73,41 @@ If the repo setting leaves the workflow token read-only, the action can still
 complete translation and push a branch in some configurations, but `gh pr
 create` fails with a `createPullRequest` permission error.
 
-For Java `.properties` suffix layouts, ignore the runtime archive folder created
-under the localization input folder, for example:
+Recent action versions stage only the configured localization input folder and
+exclude archive folders from generated PRs. Still ignore the runtime archive
+folder as defense in depth, especially for local runs:
 
 ```gitignore
 /src/main/resources/archive/
 ```
 
-## First Run
+## Signed Commits
 
-For a one-time backfill, run the workflow manually with:
+Repositories with strict signed-commit rules should use SSH commit signing from
+a dedicated machine user:
+
+1. Create a no-passphrase Ed25519 SSH key used only for commit signing.
+2. Add the public key to the machine user's GitHub account as an SSH signing key.
+3. Use a verified email address from that account for `git-user-email`.
+4. Store the private key as an Actions secret, for example
+   `LOCALIZE_COMMIT_SIGNING_KEY`.
+5. Pass the signing inputs to the action:
 
 ```yaml
-process-all-files: true
+      - uses: bisq-network/localize-pipeline@v0.1.1
+        with:
+          config-file: config.yaml
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          git-user-name: localize-bot
+          git-user-email: localize-bot@users.noreply.github.com
+          commit-signing-method: ssh
+          commit-signing-key: ${{ secrets.LOCALIZE_COMMIT_SIGNING_KEY }}
 ```
 
-After the first PR is merged, return to the default `false` value so future runs
-only translate changed strings.
+The action writes the private key to the runner temp directory, validates it
+with `ssh-keygen`, signs the generated translation commit with `git commit -S`,
+and deletes the key file when the step exits. Do not reuse deploy keys or human
+authentication keys for this.
 
 ## Config Examples
 
@@ -180,12 +214,16 @@ jobs:
 | `plugin-modules` | empty | Comma-separated plugin modules to load before check/run. |
 | `plugin-install-command` | empty | Shell command to install custom adapter packages before check/run. |
 | `diff-base` | `${{ github.event.before }}` | Ref used for changed-string detection. |
-| `process-all-files` | `false` | Translate all target files. Use for backfills. |
+| `process-all-files` | `false` | Translate all target files. Use only for controlled full scans/backfills. |
 | `dry-run` | `false` | Preview discovery and validation without model calls or translation writes. |
 | `open-pr` | `true` | Open a PR or leave changes in the workspace. |
 | `pr-branch` | `ai-translations` | Branch for translation changes. |
 | `pr-title` | `Update AI translations` | PR title. |
 | `commit-message` | `Update AI translations` | Commit message. |
+| `git-user-name` | `github-actions[bot]` | Committer name for generated translation commits. |
+| `git-user-email` | `41898282+github-actions[bot]@users.noreply.github.com` | Committer email for generated translation commits. |
+| `commit-signing-method` | `none` | Commit signing mode. Use `ssh` for strict signed-commit repos. |
+| `commit-signing-key` | empty | Private SSH signing key used when `commit-signing-method: ssh`. |
 | `github-token` | `${{ github.token }}` | Token for pushing and opening the PR. |
 | `python-version` | `3.11` | Python version used by the action. |
 
@@ -198,9 +236,13 @@ python -m localize.cli check --config "$TRANSLATOR_CONFIG_FILE"
 python -m localize.cli run --config "$TRANSLATOR_CONFIG_FILE"
 ```
 
-The PR step commits only when localization files changed. User-provided action
-inputs are passed through environment variables, not interpolated directly into
-shell scripts.
+The PR step commits only when localization files changed. It excludes archive
+folders from staging, signs the commit when configured, and writes a PR body
+from the JSON run summaries when available. Those summaries are also uploaded as
+the `localize-pipeline-summaries` workflow artifact on every run.
+
+User-provided action inputs are passed through environment variables, not
+interpolated directly into shell scripts.
 
 Pin a tagged release for production workflows. A workflow reference such as
 `bisq-network/localize-pipeline@main` follows unreleased changes;
