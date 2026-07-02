@@ -213,6 +213,7 @@ def test_git_source_baseline_uses_persistent_logs_state():
 
     assert "sanitize_state_component()" in script
     assert 'state_dir="${LOCALIZE_STATE_DIR:-$LOG_DIR/state}"' in script
+    assert 'input_component=$(sanitize_state_component "${INPUT_FOLDER:-default}")' in script
     assert "git-source-baseline" in script
     assert "GIT_SOURCE_BASELINE_FILE=" in script
     assert "GIT_SOURCE_CURRENT_HEAD=" in script

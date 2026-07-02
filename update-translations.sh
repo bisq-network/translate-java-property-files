@@ -148,9 +148,11 @@ git_source_baseline_path() {
     local state_dir="$1"
     local repo_component
     local branch_component
+    local input_component
     repo_component=$(sanitize_state_component "$UPSTREAM_REPO_NAME")
     branch_component=$(sanitize_state_component "$DEFAULT_BRANCH")
-    printf '%s/git-source-baseline-%s-%s.sha\n' "$state_dir" "$repo_component" "$branch_component"
+    input_component=$(sanitize_state_component "${INPUT_FOLDER:-default}")
+    printf '%s/git-source-baseline-%s-%s-%s.sha\n' "$state_dir" "$repo_component" "$branch_component" "$input_component"
 }
 
 prepare_git_source_diff_base() {
