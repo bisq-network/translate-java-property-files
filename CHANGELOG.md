@@ -15,6 +15,9 @@ stable `1.0.0`, minor releases may still refine public APIs with migration notes
 
 ### Fixed
 
+- Translation quality reports now separate AI semantic-review findings from
+  rule/heuristic findings, show suggested AI-review values in PR examples, and
+  exclude already auto-remediated AI findings from outstanding counts.
 - Translation service health checks now alert on stale completed cron runs and
   continue to inspect the latest run after log rotation.
 - Git-source production installs now persist a last-processed upstream commit and

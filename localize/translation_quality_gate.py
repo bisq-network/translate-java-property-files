@@ -523,18 +523,45 @@ def _filter_pipeline_warnings(
     ]
 
 
+def _semantic_review_remediation_signatures(
+    validation_summary: Dict[str, Any],
+    changed_files: Sequence[str],
+    input_folder: str,
+) -> set[str]:
+    changed_relative_files = _changed_files_relative_to_input(changed_files, input_folder)
+    signatures: set[str] = set()
+    for raw_remediation in validation_summary.get("semantic_review_remediations", []):
+        if not isinstance(raw_remediation, dict):
+            continue
+        filename = str(raw_remediation.get("file", ""))
+        if changed_relative_files and not _file_matches_changed_files(filename, changed_relative_files):
+            continue
+        signature = str(raw_remediation.get("finding_signature", ""))
+        if signature:
+            signatures.add(signature)
+    return signatures
+
+
 def _semantic_review_stats_from_validation(
     validation_summary: Dict[str, Any],
     changed_files: Sequence[str],
     input_folder: str,
-) -> SemanticQAStats:
+) -> Tuple[SemanticQAStats, int]:
     changed_relative_files = _changed_files_relative_to_input(changed_files, input_folder)
+    remediated_signatures = _semantic_review_remediation_signatures(
+        validation_summary,
+        changed_files,
+        input_folder,
+    )
     findings: List[SemanticFinding] = []
     for raw_finding in validation_summary.get("semantic_review_findings", []):
         if not isinstance(raw_finding, dict):
             continue
         filename = str(raw_finding.get("file", ""))
         if changed_relative_files and not _file_matches_changed_files(filename, changed_relative_files):
+            continue
+        signature = str(raw_finding.get("finding_signature", ""))
+        if signature and signature in remediated_signatures:
             continue
         severity = str(raw_finding.get("severity", "warning")).lower()
         if severity not in {"error", "warning"}:
@@ -555,7 +582,7 @@ def _semantic_review_stats_from_validation(
                 ),
             )
         )
-    return SemanticQAStats.from_findings(findings)
+    return SemanticQAStats.from_findings(findings), len(remediated_signatures)
 
 
 def _merge_semantic_stats(
@@ -584,10 +611,22 @@ def build_quality_gate_report(
     validation_totals = _aggregate_validation(validation_summary, changed_files, input_folder)
     pipeline_warnings = _filter_pipeline_warnings(validation_summary, changed_files, input_folder)
     blocking_reasons: List[str] = []
-    semantic_stats = _merge_semantic_stats(
-        semantic_stats,
-        _semantic_review_stats_from_validation(validation_summary, changed_files, input_folder),
+    rule_and_heuristic_stats = semantic_stats or SemanticQAStats()
+    semantic_review_stats, remediated_ai_findings_count = _semantic_review_stats_from_validation(
+        validation_summary,
+        changed_files,
+        input_folder,
     )
+    semantic_stats = _merge_semantic_stats(
+        rule_and_heuristic_stats,
+        semantic_review_stats,
+    )
+    semantic_qa = semantic_stats.to_dict()
+    semantic_qa["source_breakdown"] = {
+        "rules_and_heuristics": rule_and_heuristic_stats.to_dict(),
+        "ai_review": semantic_review_stats.to_dict(),
+        "remediated_ai_findings_count": remediated_ai_findings_count,
+    }
 
     source_identical_blocking = (
         source_stats.unexpected_source_identical_count >= config.source_identical_min_block_count
@@ -623,7 +662,7 @@ def build_quality_gate_report(
         "status_state": "failure" if blocking else "success",
         "status_description": description,
         "source_identical": source_stats.to_dict(),
-        "semantic_qa": semantic_stats.to_dict(),
+        "semantic_qa": semantic_qa,
         "validation": validation_totals,
         "pipeline_warnings_count": len(pipeline_warnings),
         "pipeline_warnings": pipeline_warnings,
@@ -638,6 +677,53 @@ def _format_percent(value: float) -> str:
 def _truncate(value: str, limit: int = 100) -> str:
     value = value.replace("\n", "\\n")
     return value if len(value) <= limit else value[: limit - 3] + "..."
+
+
+def _semantic_breakdown_summary(semantic_qa: Mapping[str, Any]) -> str:
+    breakdown = semantic_qa.get("source_breakdown")
+    if not isinstance(breakdown, Mapping):
+        return ""
+
+    ai_review = breakdown.get("ai_review", {})
+    rules_and_heuristics = breakdown.get("rules_and_heuristics", {})
+    if not isinstance(ai_review, Mapping):
+        ai_review = {}
+    if not isinstance(rules_and_heuristics, Mapping):
+        rules_and_heuristics = {}
+
+    parts = [
+        f"AI review: {int(ai_review.get('findings_count', 0))}",
+        f"rules/heuristics: {int(rules_and_heuristics.get('findings_count', 0))}",
+    ]
+    remediated_count = int(breakdown.get("remediated_ai_findings_count", 0))
+    if remediated_count:
+        parts.append(f"auto-remediated: {remediated_count}")
+    return "; " + "; ".join(parts)
+
+
+def _semantic_example_line(example: Mapping[str, Any]) -> str:
+    line = (
+        f"- `{example['file']}` `{example['key']}`: "
+        f"{example['reason']} Value: `{_truncate(str(example['value']))}`"
+    )
+    suggested_value = example.get("suggested_value")
+    if suggested_value:
+        line += f" Suggested: `{_truncate(str(suggested_value))}`"
+    return line
+
+
+def _append_semantic_example_group(
+    lines: List[str],
+    title: str,
+    examples: Sequence[Mapping[str, Any]],
+) -> None:
+    if not examples:
+        return
+    lines.append(f"#### {title}")
+    lines.append("")
+    for example in examples:
+        lines.append(_semantic_example_line(example))
+    lines.append("")
 
 
 def render_quality_gate_markdown(report: Dict[str, Any]) -> str:
@@ -674,7 +760,8 @@ def render_quality_gate_markdown(report: Dict[str, Any]) -> str:
                 "| Semantic QA findings | "
                 f"{semantic_qa['findings_count']} "
                 f"({semantic_qa.get('errors_count', 0)} errors, "
-                f"{semantic_qa.get('warnings_count', 0)} warnings) |"
+                f"{semantic_qa.get('warnings_count', 0)} warnings"
+                f"{_semantic_breakdown_summary(semantic_qa)}) |"
             ),
             f"| Reverted keys | {validation['reverted_keys_count']} |",
             f"| Control-character findings | {validation['control_character_findings_count']} |",
@@ -693,14 +780,34 @@ def render_quality_gate_markdown(report: Dict[str, Any]) -> str:
             )
         lines.append("")
 
-    if semantic_qa.get("examples"):
+    semantic_breakdown = semantic_qa.get("source_breakdown")
+    if isinstance(semantic_breakdown, Mapping):
+        ai_review = semantic_breakdown.get("ai_review", {})
+        rules_and_heuristics = semantic_breakdown.get("rules_and_heuristics", {})
+        ai_examples = (
+            ai_review.get("examples", [])
+            if isinstance(ai_review, Mapping)
+            else []
+        )
+        rule_examples = (
+            rules_and_heuristics.get("examples", [])
+            if isinstance(rules_and_heuristics, Mapping)
+            else []
+        )
+    else:
+        ai_examples = []
+        rule_examples = []
+
+    if ai_examples or rule_examples:
+        lines.append("### Semantic QA Examples")
+        lines.append("")
+        _append_semantic_example_group(lines, "AI Review", ai_examples)
+        _append_semantic_example_group(lines, "Rules And Heuristics", rule_examples)
+    elif semantic_qa.get("examples"):
         lines.append("### Semantic QA Examples")
         lines.append("")
         for example in semantic_qa["examples"]:
-            lines.append(
-                f"- `{example['file']}` `{example['key']}`: "
-                f"{example['reason']} Value: `{_truncate(example['value'])}`"
-            )
+            lines.append(_semantic_example_line(example))
         lines.append("")
 
     if source.get("control_character_examples"):

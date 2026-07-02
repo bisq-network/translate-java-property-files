@@ -8,7 +8,7 @@ import yaml
 from localize.localization_formats import JSON_FORMAT, JAVA_PROPERTIES_FORMAT
 from localize.localization_layouts import LocalizationLayout, SUFFIX_LAYOUT
 from localize.localization_profiles import LocalizationProfile
-from localize.semantic_quality import SemanticRule
+from localize.semantic_quality import SemanticQAStats, SemanticRule
 from localize.translation_quality_gate import (
     QualityGateConfig,
     analyze_all_translation_entries_for_profiles,
@@ -610,6 +610,121 @@ def test_semantic_qa_reports_retained_source_words_but_ignores_glossary(tmp_path
 
     assert semantic_stats.findings_count == 1
     assert "Settlement" in semantic_stats.examples[0]["reason"]
+
+
+def test_quality_gate_excludes_remediated_semantic_review_findings():
+    report = build_quality_gate_report(
+        source_stats=analyze_source_identical_changes(
+            diff_text="",
+            repo_root=".",
+            input_folder="resources",
+            locale_codes=["es"],
+            brand_glossary=[],
+        ),
+        semantic_stats=None,
+        validation_summary={
+            "files": {},
+            "pipeline_warnings": [],
+            "semantic_review_findings": [
+                {
+                    "file": "mobile_es.properties",
+                    "key": "mobile.peer.count",
+                    "severity": "error",
+                    "reason": "Connected peers was mistranslated.",
+                    "value": "Conexiones de pares: {0}",
+                    "suggested_value": "Pares conectados: {0}",
+                    "finding_signature": "peer-count-finding",
+                    "rule_id": "ai-review",
+                    "source": "ai-review",
+                },
+                {
+                    "file": "mobile_es.properties",
+                    "key": "mobile.slow.body",
+                    "severity": "warning",
+                    "reason": "Encrypted should use stronger security terminology.",
+                    "value": "Tu conexión está encriptada.",
+                    "suggested_value": "Tu conexión está cifrada.",
+                    "finding_signature": "encrypted-warning",
+                    "rule_id": "ai-review",
+                    "source": "ai-review",
+                },
+            ],
+            "semantic_review_remediations": [
+                {
+                    "file": "mobile_es.properties",
+                    "key": "mobile.peer.count",
+                    "finding_signature": "peer-count-finding",
+                },
+            ],
+        },
+        changed_files=["resources/mobile_es.properties"],
+        input_folder="resources",
+        config=QualityGateConfig(block_on_semantic_qa_findings=True),
+    )
+
+    assert report["semantic_qa"]["findings_count"] == 1
+    assert report["semantic_qa"]["errors_count"] == 0
+    assert report["semantic_qa"]["warnings_count"] == 1
+    assert report["semantic_qa"]["source_breakdown"]["ai_review"]["findings_count"] == 1
+    assert report["semantic_qa"]["source_breakdown"]["remediated_ai_findings_count"] == 1
+    assert report["blocking"] is False
+
+
+def test_quality_gate_markdown_separates_semantic_sources():
+    report = build_quality_gate_report(
+        source_stats=analyze_source_identical_changes(
+            diff_text="",
+            repo_root=".",
+            input_folder="resources",
+            locale_codes=["es"],
+            brand_glossary=[],
+        ),
+        semantic_stats=SemanticQAStats(
+            findings_count=1,
+            warnings_count=1,
+            examples=[
+                {
+                    "file": "mobile_es.properties",
+                    "key": "mobile.internet",
+                    "value": "conexión a internet",
+                    "reason": "Target may retain untranslated source term(s): internet.",
+                    "severity": "warning",
+                    "rule_id": "retained-source-word",
+                    "source": "heuristic",
+                }
+            ],
+        ),
+        validation_summary={
+            "files": {},
+            "pipeline_warnings": [],
+            "semantic_review_findings": [
+                {
+                    "file": "mobile_es.properties",
+                    "key": "mobile.slow.body",
+                    "severity": "warning",
+                    "reason": "Encrypted should use stronger security terminology.",
+                    "value": "Tu conexión está encriptada.",
+                    "suggested_value": "Tu conexión está cifrada.",
+                    "finding_signature": "encrypted-warning",
+                    "rule_id": "ai-review",
+                    "source": "ai-review",
+                },
+            ],
+        },
+        changed_files=["resources/mobile_es.properties"],
+        input_folder="resources",
+        config=QualityGateConfig(),
+    )
+
+    markdown = render_quality_gate_markdown(report)
+
+    assert "AI review: 1" in markdown
+    assert "rules/heuristics: 1" in markdown
+    assert "### Semantic QA Examples" in markdown
+    assert "#### AI Review" in markdown
+    assert "#### Rules And Heuristics" in markdown
+    assert "Suggested: `Tu conexión está cifrada.`" in markdown
+    assert "Target may retain untranslated source term(s): internet." in markdown
 
 
 def test_quality_gate_markdown_contains_validation_summary():
